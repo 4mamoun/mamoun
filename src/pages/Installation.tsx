@@ -1,52 +1,99 @@
 // ============================================================
-// Installation v2.0 — شاشة التركيب
-// تعرض الدفعات المستلمة + منتجاتها للتركيب في الموقع
+// Installation v9.0 — شاشة التركيب بالمنتجات
+// كل منتج = card مستقل مع شريط تقدم + قطع + حالة
 // Firestore real-time — بدون localStorage
 // ============================================================
 
 import { useState, useMemo } from 'react';
 import { useDataStore } from '@/store/dataStore';
 import { useAuthStore } from '@/store/authStore';
+import BatchNotes from '@/components/BatchNotes';
 import { Button } from '@/components/ui/button';
 import {
   Wrench, CheckCircle, Building2, Layers, Package,
-  ImageIcon, LogOut, ChevronDown, ChevronUp,
-  Box, Puzzle, Gem, Sofa, AlertCircle,
+  LogOut, ChevronDown, ChevronUp, Box, Puzzle, Gem, Sofa,
+  XSquare, AlertTriangle, MessageSquare,
+  MapPin, Percent, StickyNote,
 } from 'lucide-react';
+import type {
+  ProductInstallation, ProductInstallComponent, InstallItemStatus,
+  ProductComponent, BatchProduct,
+} from '@/types';
 
-type ItemCategory = 'product' | 'part' | 'accessory' | 'top';
-
-interface InstallItem {
-  id: string;
-  name: string;
-  code: string;
-  img?: string;
-  category: ItemCategory;
-  categoryLabel: string;
-  qty: number;
-  boxNum: string;
-  boxId: string;
-  installed: boolean;
+// ─── Helpers ───
+function uid() {
+  return Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
 }
 
-// ─── Group items by category ───
-const CAT_COLORS: Record<string, { bg: string; text: string; icon: typeof Box }> = {
-  product: { bg: 'bg-blue-100', text: 'text-blue-700', icon: Box },
-  part: { bg: 'bg-cyan-100', text: 'text-cyan-700', icon: Puzzle },
-  accessory: { bg: 'bg-purple-100', text: 'text-purple-700', icon: Gem },
-  top: { bg: 'bg-teal-100', text: 'text-teal-700', icon: Sofa },
+// ─── Status Config ───
+const STATUS_CONFIG: Record<InstallItemStatus, { label: string; color: string; bg: string; border: string; icon: typeof CheckCircle }> = {
+  pending:   { label: 'قيد الانتظار', color: 'text-gray-500',  bg: 'bg-gray-100',  border: 'border-gray-200',  icon: Box },
+  installed: { label: 'تم الاستلام',  color: 'text-green-700', bg: 'bg-green-100', border: 'border-green-200', icon: CheckCircle },
+  missing:   { label: 'نقص',          color: 'text-amber-700', bg: 'bg-amber-100', border: 'border-amber-200', icon: AlertTriangle },
+  rejected:  { label: 'مرفوض',        color: 'text-red-700',   bg: 'bg-red-100',   border: 'border-red-200',   icon: XSquare },
+  noted:     { label: 'ملاحظة',       color: 'text-blue-700',  bg: 'bg-blue-100',  border: 'border-blue-200',  icon: MessageSquare },
 };
+
+// ─── Component Type Icons ───
+const COMP_TYPE_ICON: Record<string, typeof Puzzle> = {
+  part: Puzzle,
+  'part-set': Puzzle,
+  accessory: Gem,
+  'acc-set': Gem,
+  top: Sofa,
+};
+const COMP_TYPE_LABEL: Record<string, string> = {
+  part: 'قطعة',
+  'part-set': 'طقم قطع',
+  accessory: 'اكسسوار',
+  'acc-set': 'طقم اكسسوار',
+  top: 'توب',
+};
+
+// ─── Map product compType to install partType ───
+function compTypeToPartType(ct: ProductComponent['compType']): ProductInstallComponent['partType'] {
+  if (ct === 'top') return 'top';
+  if (ct === 'accessory' || ct === 'acc-set') return 'accessory';
+  return 'part';
+}
+
+// ─── Progress bar color based on percentage ───
+function progressColor(pct: number): string {
+  if (pct === 0)   return 'bg-gray-200';
+  if (pct < 50)    return 'bg-amber-400';
+  if (pct < 100)   return 'bg-blue-500';
+  return 'bg-green-500';
+}
+function progressTextColor(pct: number): string {
+  if (pct === 0)   return 'text-gray-400';
+  if (pct < 50)    return 'text-amber-600';
+  if (pct < 100)   return 'text-blue-600';
+  return 'text-green-600';
+}
+
+// ─── Grouping key ───
+interface InstallGroup {
+  batchId: string;
+  batchName: string;
+  projectId: string;
+  projectName: string;
+  products: ProductInstallation[];
+}
 
 export default function Installation() {
   const {
-    boxes, containers, projects, batches,
-    products, parts, tops, updateBox,
+    boxes, containers, projects, batches, products,
+    installations, addInstallation, updateInstallation,
+    updateBox,
   } = useDataStore();
   const user = useAuthStore(s => s.user);
 
-  const [expandedBox, setExpandedBox] = useState<string | null>(null);
+  const [expandedProduct, setExpandedProduct] = useState<string | null>(null);
+  const [notesOpen, setNotesOpen] = useState(false);
+  const [notesBatchId, setNotesBatchId] = useState('');
+  const [notesBatchName, setNotesBatchName] = useState('');
 
-  // ─── Get delivered batches (all containers delivered) ───
+  // ─── Get delivered batches ───
   const deliveredBatches = useMemo(() => {
     return batches.filter(batch => {
       const batchBoxes = boxes.filter(b => b.batchId === batch.id);
@@ -54,100 +101,206 @@ export default function Installation() {
         batchBoxes.filter(b => b.containerId).map(b => b.containerId as string)
       );
       const batchContainers = containers.filter(c => batchContainerIds.has(c.id));
-      // Must have containers AND all delivered
       return batchContainers.length > 0 && batchContainers.every(c => c.shipmentStatus === 'delivered');
-    }).map(batch => {
+    });
+  }, [batches, boxes, containers]);
+
+  // ─── Build product installations ───
+  // Link: batch → boxes → box.prods → product → product.components
+  const installGroups: InstallGroup[] = useMemo(() => {
+    const groups: InstallGroup[] = [];
+
+    for (const batch of deliveredBatches) {
       const project = projects.find(p => p.id === batch.projectId);
       const batchBoxes = boxes.filter(b => b.batchId === batch.id);
-      const batchContainerIds = new Set(
-        batchBoxes.filter(b => b.containerId).map(b => b.containerId as string)
-      );
-      const batchContainers = containers.filter(c => batchContainerIds.has(c.id));
-      return { batch, project: project || { id: '', name: '—' }, boxes: batchBoxes, containers: batchContainers };
-    });
-  }, [batches, boxes, containers, projects]);
 
-  // ─── Build install items from boxes ───
-  const getBoxItems = (box: typeof boxes[0]): InstallItem[] => {
-    const items: InstallItem[] = [];
+      // Collect all products across all boxes in this batch
+      const prodMap = new Map<string, ProductInstallation>();
 
-    // 1. Products from box.prods
-    (box.prods || []).forEach((prod, idx) => {
-      const productInfo = products.find(p => p.id === prod.id || p.code === prod.code);
-      items.push({
-        id: `prod_${box.id}_${idx}`,
-        name: prod.name || productInfo?.name || 'منتج',
-        code: prod.code || productInfo?.code || '—',
-        img: productInfo?.img,
-        category: 'product',
-        categoryLabel: 'منتج',
-        qty: prod.qty,
-        boxNum: box.num,
-        boxId: box.id,
-        installed: !!box.installed,
-      });
-    });
+      for (const box of batchBoxes) {
+        // Skip already fully installed boxes
+        const isBoxInstalled = !!box.installed;
 
-    // 2. Pick items (not from products)
-    (box.pickItems || []).forEach((item, idx) => {
-      if (item.fromProduct && !item.isExtra) return; // Skip product-derived items
+        for (const boxProd of (box.prods || [])) {
+          const productInfo = products.find(p => p.id === boxProd.id || p.code === boxProd.code);
+          if (!productInfo) continue;
 
-      const catLabels: Record<string, string> = {
-        part: 'قطعة', accessory: 'اكسسوار', top: 'توب', product: 'منتج',
-      };
-      let itemImg: string | undefined;
-      if (item.type === 'part') {
-        const p = parts.find((x: any) => x.revit === item.code || x.id === (item as any).itemId);
-        if (p) itemImg = p.img;
-      } else if (item.type === 'top') {
-        const t = tops.find((x: any) => x.code === item.code || x.id === (item as any).itemId);
-        if (t) itemImg = t.img;
+          // Find batchProduct for location info
+          const bp: BatchProduct | undefined = batch.prods.find(
+            (bpr: BatchProduct) => bpr.id === boxProd.id || bpr.code === boxProd.code
+          );
+
+          // Build unique key per product+box combination
+          const key = `${batch.id}_${box.id}_${productInfo.id}`;
+
+          // Check if we already have an installation record in the store
+          const existing = installations.find(i =>
+            i.batchId === batch.id && i.productId === productInfo.id && i.boxId === box.id
+          );
+
+          // Build components from product.components
+          const comps: ProductInstallComponent[] = existing?.components ||
+            productInfo.components.map((pc: ProductComponent) => ({
+              partId: pc.id,
+              partCode: pc.code,
+              partName: pc.name,
+              partType: compTypeToPartType(pc.compType),
+              qty: pc.qty * (boxProd.qty || 1),
+              status: 'pending' as InstallItemStatus,
+            }));
+
+          // Resolve location info
+          let buildingName = box.bldg || '—';
+          let floorName = box.flr || '—';
+          let roomName = bp?.roomName || '—';
+
+          // Try to resolve from project if IDs exist
+          if (project && bp?.buildingId) {
+            const bldg = project.buildings.find(b => b.id === bp.buildingId);
+            if (bldg) {
+              buildingName = bldg.name;
+              if (bp?.floorId) {
+                const flr = bldg.floors.find(f => f.id === bp.floorId);
+                if (flr) floorName = flr.name;
+              }
+            }
+          }
+
+          const installedCount = comps.filter(c => c.status === 'installed').length;
+          const totalCount = comps.length;
+          const progress = totalCount > 0 ? Math.round((installedCount / totalCount) * 100) : 0;
+
+          const inst: ProductInstallation = {
+            id: existing?.id || uid(),
+            batchId: batch.id,
+            batchName: batch.name,
+            productId: productInfo.id,
+            productName: productInfo.name,
+            productCode: productInfo.code,
+            productImg: productInfo.img,
+            projectId: project?.id || batch.projectId || '',
+            projectName: project?.name || '—',
+            buildingId: bp?.buildingId || '',
+            buildingName,
+            floorId: bp?.floorId || '',
+            floorName,
+            roomId: bp?.roomId || '',
+            roomName,
+            qty: boxProd.qty || 1,
+            components: comps,
+            overallProgress: existing?.overallProgress ?? progress,
+            installedAt: existing?.installedAt || box.installedAt,
+            installedBy: existing?.installedBy || box.installedBy,
+            boxId: box.id,
+            boxNum: box.num,
+            createdAt: existing?.createdAt || new Date().toISOString(),
+            updatedAt: existing?.updatedAt || new Date().toISOString(),
+          };
+
+          prodMap.set(key, inst);
+        }
       }
 
-      items.push({
-        id: `extra_${box.id}_${idx}`,
-        name: item.name,
-        code: item.code,
-        img: itemImg,
-        category: (item.type as ItemCategory) || 'part',
-        categoryLabel: catLabels[item.type] || 'قطعة',
-        qty: item.assignedQty || item.qty,
-        boxNum: box.num,
-        boxId: box.id,
-        installed: !!box.installed,
-      });
-    });
+      if (prodMap.size > 0) {
+        groups.push({
+          batchId: batch.id,
+          batchName: batch.name,
+          projectId: project?.id || batch.projectId || '',
+          projectName: project?.name || '—',
+          products: Array.from(prodMap.values()),
+        });
+      }
+    }
 
-    return items;
+    return groups;
+  }, [deliveredBatches, boxes, products, projects, installations, batches]);
+
+  // ─── Handle component status change ───
+  const handleComponentStatus = async (
+    inst: ProductInstallation,
+    partIdx: number,
+    newStatus: InstallItemStatus
+  ) => {
+    const updatedComps = inst.components.map((c, i) =>
+      i === partIdx ? { ...c, status: newStatus } : c
+    );
+    const installedCount = updatedComps.filter(c => c.status === 'installed').length;
+    const totalCount = updatedComps.length;
+    const newProgress = totalCount > 0 ? Math.round((installedCount / totalCount) * 100) : 0;
+
+    const patch: Partial<ProductInstallation> = {
+      components: updatedComps,
+      overallProgress: newProgress,
+      updatedAt: new Date().toISOString(),
+    };
+
+    // If all installed, pre-fill the installation info
+    if (newProgress === 100 && !inst.installedAt) {
+      patch.installedAt = new Date().toISOString();
+      patch.installedBy = user?.name || user?.email || '—';
+    }
+
+    // Check if this installation already exists in store
+    const existing = installations.find(i => i.id === inst.id);
+    if (existing) {
+      await updateInstallation(inst.id, patch);
+    } else {
+      await addInstallation({ ...inst, ...patch } as ProductInstallation);
+    }
   };
 
-  // ─── Confirm installation of a box ───
-  const handleConfirmBox = (boxId: string) => {
-    if (!confirm('تأكيد تركيب كل محتويات هذا الصندوق؟')) return;
-    updateBox(boxId, {
-      installed: true,
-      installedAt: new Date().toISOString(),
-      installedBy: user?.name || user?.email,
-    });
+  // ─── Handle final box confirmation ───
+  const handleConfirmInstallation = async (inst: ProductInstallation) => {
+    if (!confirm('تأكيد التركيب النهائي؟ لا يمكن التراجع عن هذا الإجراء.')) return;
+
+    const now = new Date().toISOString();
+    const installer = user?.name || user?.email || '—';
+
+    // Update the installation record
+    const patch: Partial<ProductInstallation> = {
+      overallProgress: 100,
+      installedAt: now,
+      installedBy: installer,
+      updatedAt: now,
+    };
+
+    const existing = installations.find(i => i.id === inst.id);
+    if (existing) {
+      await updateInstallation(inst.id, patch);
+    } else {
+      await addInstallation({ ...inst, ...patch } as ProductInstallation);
+    }
+
+    // Update the box
+    if (inst.boxId) {
+      await updateBox(inst.boxId, {
+        installed: true,
+        installedAt: now,
+        installedBy: installer,
+      });
+    }
+  };
+
+  // ─── Open notes ───
+  const openNotes = (batchId: string, batchName: string) => {
+    setNotesBatchId(batchId);
+    setNotesBatchName(batchName);
+    setNotesOpen(true);
   };
 
   // ─── Stats ───
-  const totalItems = useMemo(() => {
-    return deliveredBatches.reduce((sum, db) => {
-      return sum + db.boxes.reduce((s, b) => s + (b.prods || []).length + (b.pickItems || []).filter(i => !i.fromProduct || i.isExtra).length, 0);
-    }, 0);
-  }, [deliveredBatches]);
+  const allProducts = installGroups.flatMap(g => g.products);
+  const totalProducts = allProducts.length;
+  const completedProducts = allProducts.filter(p => p.overallProgress === 100).length;
+  const inProgressProducts = totalProducts - completedProducts;
 
-  const installedBoxesCount = useMemo(() => {
-    return deliveredBatches.reduce((sum, db) => sum + db.boxes.filter(b => b.installed).length, 0);
-  }, [deliveredBatches]);
-
-  const totalBoxesCount = useMemo(() => {
-    return deliveredBatches.reduce((sum, db) => sum + db.boxes.length, 0);
-  }, [deliveredBatches]);
+  const totalComponents = allProducts.reduce((s, p) => s + p.components.length, 0);
+  const installedComponents = allProducts.reduce(
+    (s, p) => s + p.components.filter(c => c.status === 'installed').length, 0
+  );
 
   // ═══ Empty State ═══
-  if (deliveredBatches.length === 0) {
+  if (installGroups.length === 0) {
     return (
       <div className="min-h-screen bg-gray-50" dir="rtl">
         {/* Header */}
@@ -158,10 +311,14 @@ export default function Installation() {
             </div>
             <div>
               <h1 className="text-sm font-bold text-gray-800">التركيب</h1>
-              <p className="text-[9px] text-gray-400">Installation</p>
+              <p className="text-[9px] text-gray-400">v9.0</p>
             </div>
           </div>
-          <button onClick={() => { if (confirm('تسجيل خروج؟')) window.location.reload(); }} className="p-2 hover:bg-red-50 rounded-lg transition-colors" title="تسجيل خروج">
+          <button
+            onClick={() => { if (confirm('تسجيل خروج؟')) window.location.reload(); }}
+            className="p-2 hover:bg-red-50 rounded-lg transition-colors"
+            title="تسجيل خروج"
+          >
             <LogOut className="w-4 h-4 text-red-500" />
           </button>
         </div>
@@ -197,142 +354,261 @@ export default function Installation() {
         </div>
         <div className="flex items-center gap-2">
           <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
-            {totalBoxesCount - installedBoxesCount} قيد التركيب
+            {inProgressProducts} قيد التركيب
           </span>
           <span className="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
-            {installedBoxesCount} مُركب
+            {completedProducts} مكتمل
           </span>
-          <button onClick={() => { if (confirm('تسجيل خروج؟')) window.location.reload(); }} className="p-2 hover:bg-red-50 rounded-lg transition-colors" title="تسجيل خروج">
+          <button
+            onClick={() => { if (confirm('تسجيل خروج؟')) window.location.reload(); }}
+            className="p-2 hover:bg-red-50 rounded-lg transition-colors"
+            title="تسجيل خروج"
+          >
             <LogOut className="w-4 h-4 text-red-500" />
           </button>
         </div>
       </div>
 
       <div className="p-4 space-y-4 max-w-2xl mx-auto">
-        {/* Stats */}
-        <div className="grid grid-cols-3 gap-3">
+        {/* Stats Cards */}
+        <div className="grid grid-cols-4 gap-3">
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-3 text-center">
             <Package className="w-5 h-5 text-blue-500 mx-auto mb-1" />
-            <p className="text-lg font-bold text-gray-800">{deliveredBatches.length}</p>
-            <p className="text-[9px] text-gray-400">دفعة مستلمة</p>
+            <p className="text-lg font-bold text-gray-800">{totalProducts}</p>
+            <p className="text-[9px] text-gray-400">منتج</p>
           </div>
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-3 text-center">
             <Wrench className="w-5 h-5 text-amber-500 mx-auto mb-1" />
-            <p className="text-lg font-bold text-amber-700">{totalBoxesCount - installedBoxesCount}</p>
-            <p className="text-[9px] text-gray-400">صندوق قيد التركيب</p>
+            <p className="text-lg font-bold text-amber-700">{inProgressProducts}</p>
+            <p className="text-[9px] text-gray-400">قيد التركيب</p>
           </div>
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-3 text-center">
             <CheckCircle className="w-5 h-5 text-green-500 mx-auto mb-1" />
-            <p className="text-lg font-bold text-green-700">{installedBoxesCount}</p>
-            <p className="text-[9px] text-gray-400">صندوق مُركب</p>
+            <p className="text-lg font-bold text-green-700">{completedProducts}</p>
+            <p className="text-[9px] text-gray-400">مكتمل</p>
+          </div>
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-3 text-center">
+            <Percent className="w-5 h-5 text-purple-500 mx-auto mb-1" />
+            <p className="text-lg font-bold text-purple-700">
+              {totalComponents > 0 ? Math.round((installedComponents / totalComponents) * 100) : 0}%
+            </p>
+            <p className="text-[9px] text-gray-400">الإجمالي</p>
           </div>
         </div>
 
-        {/* Batch Groups */}
-        {deliveredBatches.map(({ batch, project, boxes: batchBoxes }) => (
-          <div key={batch.id} className="space-y-2">
-            {/* Batch Header */}
+        {/* Install Groups by Batch/Project */}
+        {installGroups.map(group => (
+          <div key={group.batchId} className="space-y-3">
+            {/* Group Header */}
             <div className="flex items-center gap-2 px-1">
               <Building2 className="w-4 h-4 text-blue-500" />
-              <span className="text-sm font-bold text-gray-700">{project.name}</span>
+              <span className="text-sm font-bold text-gray-700">{group.projectName}</span>
               <Layers className="w-3 h-3 text-gray-300" />
-              <span className="text-xs text-gray-600">{batch.name}</span>
+              <span className="text-xs text-gray-600">{group.batchName}</span>
               <div className="flex-1 h-px bg-gray-100" />
-              <span className="text-[10px] text-gray-400">{batchBoxes.length} صندوق</span>
+              <button
+                onClick={() => openNotes(group.batchId, group.batchName)}
+                className="flex items-center gap-1 text-[10px] bg-blue-50 text-blue-600 px-2 py-1 rounded-lg hover:bg-blue-100 transition-colors"
+              >
+                <StickyNote className="w-3 h-3" />
+                ملاحظات
+              </button>
             </div>
 
-            {/* Boxes */}
-            {batchBoxes.map(box => {
-              const isOpen = expandedBox === box.id;
-              const items = getBoxItems(box);
-              const isInstalled = !!box.installed;
+            {/* Product Cards */}
+            {group.products.map(inst => {
+              const isOpen = expandedProduct === inst.id;
+              const isCompleted = inst.overallProgress === 100;
+              const pct = inst.overallProgress;
 
               return (
-                <div key={box.id} className={`bg-white rounded-xl shadow-sm border overflow-hidden ${isInstalled ? 'border-green-200' : 'border-gray-100'}`}>
-                  {/* Box Header */}
+                <div
+                  key={inst.id}
+                  className={`bg-white rounded-xl shadow-sm border overflow-hidden transition-all ${
+                    isCompleted ? 'border-green-200' : 'border-gray-100'
+                  }`}
+                >
+                  {/* Product Header (always visible) */}
                   <button
-                    onClick={() => setExpandedBox(isOpen ? null : box.id)}
-                    className="w-full p-4 flex items-center gap-3 hover:bg-gray-50/50 transition-colors text-right"
+                    onClick={() => setExpandedProduct(isOpen ? null : inst.id)}
+                    className="w-full p-4 flex items-start gap-3 hover:bg-gray-50/50 transition-colors text-right"
                   >
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${isInstalled ? 'bg-green-100' : 'bg-blue-100'}`}>
-                      <Package className={`w-5 h-5 ${isInstalled ? 'text-green-600' : 'text-blue-600'}`} />
+                    {/* Product Image */}
+                    <div className={`w-14 h-14 rounded-xl flex items-center justify-center flex-shrink-0 overflow-hidden border ${
+                      isCompleted ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'
+                    }`}>
+                      {inst.productImg ? (
+                        <img src={inst.productImg} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <Box className={`w-6 h-6 ${isCompleted ? 'text-green-400' : 'text-gray-300'}`} />
+                      )}
                     </div>
+
+                    {/* Info */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <p className="text-sm font-bold text-gray-800">صندوق {box.num}</p>
-                        {isInstalled && <CheckCircle className="w-4 h-4 text-green-500" />}
+                        <p className="text-sm font-bold text-gray-800 truncate">{inst.productName}</p>
+                        {isCompleted && <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />}
                       </div>
-                      <div className="flex items-center gap-2 flex-wrap mt-0.5">
-                        <span className="text-[9px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">{box.type}</span>
-                        <span className="text-[9px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">{items.length} منتج</span>
-                        {box.bldg && <span className="text-[9px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full">{box.bldg} {box.flr && `• ${box.flr}`}</span>}
+                      <p className="text-[10px] text-gray-500 font-mono mt-0.5">{inst.productCode}</p>
+
+                      {/* Location */}
+                      <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                        <span className="inline-flex items-center gap-0.5 text-[9px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full">
+                          <Building2 className="w-2.5 h-2.5" /> {inst.buildingName}
+                        </span>
+                        <span className="inline-flex items-center gap-0.5 text-[9px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">
+                          <Layers className="w-2.5 h-2.5" /> {inst.floorName}
+                        </span>
+                        <span className="inline-flex items-center gap-0.5 text-[9px] bg-purple-50 text-purple-600 px-1.5 py-0.5 rounded-full">
+                          <MapPin className="w-2.5 h-2.5" /> {inst.roomName}
+                        </span>
+                        <span className="text-[9px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">
+                          ×{inst.qty}
+                        </span>
+                      </div>
+
+                      {/* Progress Bar */}
+                      <div className="mt-2.5">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className={`text-[10px] font-bold ${progressTextColor(pct)}`}>
+                            {pct}% مكتمل
+                          </span>
+                          <span className="text-[9px] text-gray-400">
+                            {inst.components.filter(c => c.status === 'installed').length}/{inst.components.length} قطعة
+                          </span>
+                        </div>
+                        <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all duration-500 ${progressColor(pct)}`}
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
                       </div>
                     </div>
-                    <div className="flex-shrink-0">
-                      {isOpen ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+
+                    {/* Chevron */}
+                    <div className="flex-shrink-0 mt-1">
+                      {isOpen ? (
+                        <ChevronUp className="w-4 h-4 text-gray-400" />
+                      ) : (
+                        <ChevronDown className="w-4 h-4 text-gray-400" />
+                      )}
                     </div>
                   </button>
 
-                  {/* Items */}
+                  {/* Expanded: Components + Actions */}
                   {isOpen && (
                     <div className="border-t border-gray-100 p-3 space-y-2">
-                      {items.length === 0 ? (
-                        <p className="text-[11px] text-gray-400 text-center py-4">لا توجد منتجات في هذا الصندوق</p>
+                      {/* Components List */}
+                      {inst.components.length === 0 ? (
+                        <p className="text-[11px] text-gray-400 text-center py-4">لا توجد قطع لهذا المنتج</p>
                       ) : (
-                        items.map(item => {
-                          const cc = CAT_COLORS[item.category] || CAT_COLORS.part;
-                          const CatIcon = cc.icon;
+                        inst.components.map((comp, idx) => {
+                          const cfg = STATUS_CONFIG[comp.status];
+                          const StatusIcon = cfg.icon;
+                          const TypeIcon = COMP_TYPE_ICON[comp.partType] || Puzzle;
+                          const typeLabel = COMP_TYPE_LABEL[comp.partType] || comp.partType;
+
                           return (
-                            <div key={item.id} className={`rounded-xl border p-3 flex items-center gap-3 ${isInstalled ? 'bg-green-50/50 border-green-200 opacity-70' : 'bg-gray-50/50 border-gray-100'}`}>
-                              <div className="w-12 h-12 rounded-lg bg-white border flex-shrink-0 overflow-hidden">
-                                {item.img ? (
-                                  <img src={item.img} alt="" className="w-full h-full object-cover" />
-                                ) : (
-                                  <div className="w-full h-full flex items-center justify-center">
-                                    <CatIcon className="w-5 h-5 text-gray-300" />
+                            <div
+                              key={`${comp.partId}_${idx}`}
+                              className={`rounded-xl border p-3 transition-all ${
+                                comp.status === 'pending'
+                                  ? 'bg-gray-50/50 border-gray-100'
+                                  : `${cfg.bg} ${cfg.border}`
+                              }`}
+                            >
+                              {/* Component Info */}
+                              <div className="flex items-start gap-2 mb-2.5">
+                                <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                                  comp.status === 'pending' ? 'bg-gray-100' : cfg.bg
+                                }`}>
+                                  <TypeIcon className={`w-3.5 h-3.5 ${
+                                    comp.status === 'pending' ? 'text-gray-400' : cfg.color
+                                  }`} />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <p className="text-xs font-bold text-gray-800 truncate">{comp.partName}</p>
+                                    <span className={`inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded-full ${cfg.bg} ${cfg.color}`}>
+                                      <StatusIcon className="w-2.5 h-2.5" />
+                                      {cfg.label}
+                                    </span>
                                   </div>
-                                )}
+                                  <div className="flex items-center gap-2 mt-0.5">
+                                    <p className="text-[10px] text-gray-500 font-mono">{comp.partCode}</p>
+                                    <span className="text-[9px] text-gray-400 bg-white px-1.5 py-0.5 rounded-full border border-gray-100">
+                                      {typeLabel}
+                                    </span>
+                                    <span className="text-[10px] text-gray-600">
+                                      الكمية: <span className="font-bold">{comp.qty}</span>
+                                    </span>
+                                  </div>
+                                </div>
                               </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center justify-between">
-                                  <p className="text-xs font-bold text-gray-800 truncate">{item.name}</p>
-                                  {isInstalled && <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />}
-                                </div>
-                                <div className="flex items-center gap-2 mt-0.5">
-                                  <p className="text-[10px] text-gray-500 font-mono">{item.code}</p>
-                                  <span className={`inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded-full ${cc.bg} ${cc.text}`}>
-                                    <CatIcon className="w-2.5 h-2.5" /> {item.categoryLabel}
-                                  </span>
-                                </div>
-                                <p className="text-[10px] text-gray-400 mt-0.5">
-                                  الكمية: <span className="font-bold text-gray-700">{item.qty}</span>
-                                </p>
+
+                              {/* Action Buttons */}
+                              <div className="grid grid-cols-4 gap-1.5">
+                                {(['installed', 'missing', 'rejected', 'noted'] as InstallItemStatus[]).map(st => {
+                                  const stCfg = STATUS_CONFIG[st];
+                                  const StIcon = stCfg.icon;
+                                  const isActive = comp.status === st;
+                                  return (
+                                    <button
+                                      key={st}
+                                      onClick={() => handleComponentStatus(inst, idx, st)}
+                                      className={`flex items-center justify-center gap-1 text-[10px] font-bold py-2 rounded-lg border transition-all active:scale-[0.97] ${
+                                        isActive
+                                          ? `${stCfg.bg} ${stCfg.color} ${stCfg.border}`
+                                          : 'bg-white text-gray-400 border-gray-100 hover:bg-gray-50'
+                                      }`}
+                                    >
+                                      <StIcon className="w-3 h-3" />
+                                      {st === 'installed' && 'استلام'}
+                                      {st === 'missing' && 'نقص'}
+                                      {st === 'rejected' && 'رفض'}
+                                      {st === 'noted' && 'ملاحظة'}
+                                    </button>
+                                  );
+                                })}
                               </div>
                             </div>
                           );
                         })
                       )}
 
-                      {/* Confirm Button */}
-                      {!isInstalled && (
-                        <div className="pt-2 border-t border-gray-100">
+                      {/* Bottom Actions */}
+                      <div className="pt-2 flex gap-2">
+                        {/* Final Confirm Button (only at 100%) */}
+                        {isCompleted && !inst.installedAt && (
                           <Button
-                            onClick={() => handleConfirmBox(box.id)}
-                            className="w-full bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-bold py-3 rounded-xl shadow-sm active:scale-[0.98] transition-all"
+                            onClick={() => handleConfirmInstallation(inst)}
+                            className="flex-1 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-bold py-3 rounded-xl shadow-sm active:scale-[0.98] transition-all text-xs"
                           >
-                            <CheckCircle className="w-5 h-5 ml-1" />
-                            تأكيد تركيب كل محتويات الصندوق
+                            <CheckCircle className="w-4 h-4 ml-1" />
+                            تأكيد التركيب
                           </Button>
-                        </div>
-                      )}
-                      {isInstalled && (
-                        <div className="pt-2 border-t border-green-100 text-center">
-                          <p className="text-xs text-green-600 font-bold flex items-center justify-center gap-1">
-                            <CheckCircle className="w-4 h-4" />
-                            تم التركيب — {box.installedBy} ({box.installedAt ? new Date(box.installedAt).toLocaleDateString('ar-SA') : ''})
-                          </p>
-                        </div>
-                      )}
+                        )}
+
+                        {isCompleted && inst.installedAt && (
+                          <div className="flex-1 bg-green-50 border border-green-200 rounded-xl py-2.5 text-center">
+                            <p className="text-[10px] text-green-700 font-bold flex items-center justify-center gap-1">
+                              <CheckCircle className="w-3.5 h-3.5" />
+                              تم التركيب — {inst.installedBy} ({inst.installedAt ? new Date(inst.installedAt).toLocaleDateString('ar-SA') : ''})
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Notes Button */}
+                        <button
+                          onClick={() => openNotes(inst.batchId, inst.batchName)}
+                          className="flex items-center gap-1 text-[10px] bg-blue-50 text-blue-600 px-3 py-2.5 rounded-xl border border-blue-100 hover:bg-blue-100 transition-colors"
+                        >
+                          <MessageSquare className="w-3.5 h-3.5" />
+                          ملاحظات
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -341,6 +617,14 @@ export default function Installation() {
           </div>
         ))}
       </div>
+
+      {/* BatchNotes Modal */}
+      <BatchNotes
+        batchId={notesBatchId}
+        batchName={notesBatchName}
+        open={notesOpen}
+        onClose={() => setNotesOpen(false)}
+      />
     </div>
   );
 }

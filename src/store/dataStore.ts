@@ -11,6 +11,7 @@ import { db } from '@/firebase/config';
 import type {
   Part, Top, Accessory, Product, Project, Batch,
   Container, Pallet, Box, Movement, RejectedItem, Inspection,
+  ProductInstallation,
   AppSettings, AppUser,
 } from '@/types';
 
@@ -40,7 +41,7 @@ const DEFAULT_SETTINGS: AppSettings = {
 const DEFAULT_COLLECTIONS = [
   'parts', 'tops', 'accessories', 'products', 'projects', 'batches',
   'containers', 'pallets', 'boxes', 'movements', 'rejected',
-  'inspections', 'stockTransactions',
+  'inspections', 'stockTransactions', 'installations',
 ];
 
 // ─── Required fields per collection for validation ───
@@ -58,6 +59,7 @@ const REQUIRED_FIELDS: Record<string, string[]> = {
   rejected: ['id', 'reason'],
   inspections: ['id', 'status'],
   stockTransactions: ['id', 'itemId', 'type'],
+  installations: ['id', 'productId'],
 };
 
 function arrUpdate<T extends { id: string }>(arr: T[], id: string, patch: Partial<T>): T[] {
@@ -235,6 +237,7 @@ interface DataState {
   pallets: Pallet[]; boxes: Box[]; movements: Movement[];
   rejected: RejectedItem[]; inspections: Inspection[];
   stockTransactions: StockTransaction[];
+  installations: ProductInstallation[];
   settings: AppSettings;
   isLoading: boolean;
   cloudConnected: boolean;
@@ -252,6 +255,10 @@ interface DataState {
   addMovement: (m: Movement) => Promise<boolean>;
   addRejected: (r: RejectedItem) => Promise<boolean>; updateRejected: (id: string, r: Partial<RejectedItem>) => Promise<boolean>; deleteRejected: (id: string) => Promise<boolean>;
   addInspection: (i: Inspection) => Promise<boolean>; updateInspection: (id: string, i: Partial<Inspection>) => Promise<boolean>; deleteInspection: (id: string) => Promise<boolean>;
+  // ─── Installation (v9.0) ───
+  addInstallation: (inst: ProductInstallation) => Promise<boolean>;
+  updateInstallation: (id: string, patch: Partial<ProductInstallation>) => Promise<boolean>;
+  deleteInstallation: (id: string) => Promise<boolean>;
   setSettings: (s: Partial<AppSettings>) => Promise<boolean>;
   // Stock Card
   addStockTransaction: (t: StockTransaction) => Promise<boolean>;
@@ -278,6 +285,7 @@ export const useDataStore = create<DataState>((set, get) => ({
   projects: [], batches: [], containers: [],
   pallets: [], boxes: [], movements: [],
   rejected: [], inspections: [], stockTransactions: [],
+  installations: [],
   settings: DEFAULT_SETTINGS,
   isLoading: true,
   cloudConnected: false,
@@ -316,6 +324,7 @@ export const useDataStore = create<DataState>((set, get) => ({
       { name: 'rejected', key: 'rejected' },
       { name: 'inspections', key: 'inspections' },
       { name: 'stockTransactions', key: 'stockTransactions' },
+      { name: 'installations', key: 'installations' },
     ];
 
     // Load all collections in parallel using Promise.allSettled
@@ -699,6 +708,32 @@ export const useDataStore = create<DataState>((set, get) => ({
     return ok;
   },
 
+  // ═══ Installation (v9.0) ═══
+  addInstallation: async (inst) => {
+    const v = [...get().installations, inst];
+    set({ installations: v });
+    const ok = await fsSave('installations', inst.id, inst);
+    if (!ok) set({ installations: get().installations.filter(x => x.id !== inst.id) });
+    return ok;
+  },
+  updateInstallation: async (id, patch) => {
+    const prev = get().installations.find(x => x.id === id);
+    const v = arrUpdate(get().installations, id, patch);
+    set({ installations: v });
+    const data = v.find(x => x.id === id);
+    const ok = data ? await fsSave('installations', id, data) : false;
+    if (!ok && prev) set({ installations: arrUpdate(get().installations, id, prev) });
+    return ok;
+  },
+  deleteInstallation: async (id) => {
+    const prev = get().installations.find(x => x.id === id);
+    const v = arrRemove(get().installations, id);
+    set({ installations: v });
+    const ok = await fsDel('installations', id);
+    if (!ok && prev) set({ installations: [...get().installations, prev] });
+    return ok;
+  },
+
   // ─── Settings ───
   setSettings: async (s) => {
     const merged = { ...get().settings, ...s };
@@ -747,7 +782,7 @@ export const useDataStore = create<DataState>((set, get) => ({
     }
 
     console.log('[clearAll] 🧹 Starting admin wipe...');
-    const cols = ['parts', 'tops', 'accessories', 'products', 'projects', 'batches', 'containers', 'pallets', 'boxes', 'movements', 'rejected', 'inspections'];
+    const cols = ['parts', 'tops', 'accessories', 'products', 'projects', 'batches', 'containers', 'pallets', 'boxes', 'movements', 'rejected', 'inspections', 'installations'];
 
     const deletePromises = cols.map(async (col) => {
       try {
@@ -774,7 +809,8 @@ export const useDataStore = create<DataState>((set, get) => ({
     set({
       parts: [], tops: [], accessories: [], products: [], projects: [],
       batches: [], containers: [], pallets: [], boxes: [], movements: [],
-      rejected: [], inspections: [], stockTransactions: [], settings: DEFAULT_SETTINGS,
+      rejected: [], inspections: [], stockTransactions: [], installations: [],
+      settings: DEFAULT_SETTINGS,
     });
 
     return failed.length === 0;
@@ -938,7 +974,7 @@ export const useDataStore = create<DataState>((set, get) => ({
           await get()._createStockTx(
             top.id, 'top', top.name, top.code,
             'out', item.qty, 0, 0,
-            `صادر شحنة — كونتينر: ${containerName}`,
+            `صادر شحة — كونتينر: ${containerName}`,
             containerId, 'container', containerName, userName
           );
           deducted.push({ item: top.name, qty: item.qty });
@@ -999,7 +1035,7 @@ export const useDataStore = create<DataState>((set, get) => ({
         const beforeQty = part.qty;
         const afterQty = Math.max(0, part.qty - extra.qty);
         await get().updatePart(part.id, { qty: afterQty });
-        await get()._createStockTx(part.id, 'part', part.name, part.revit || part.barcode || '', 'out', extra.qty, beforeQty, afterQty, `صارد قطع إضافية — دفعة: ${batchName}`, batchId, 'batch', batchName, userName);
+        await get()._createStockTx(part.id, 'part', part.name, part.revit || part.barcode || '', 'out', extra.qty, beforeQty, afterQty, `صادر قطع إضافية — دفعة: ${batchName}`, batchId, 'batch', batchName, userName);
         deducted.push({ item: part.name, qty: extra.qty });
       }
     }

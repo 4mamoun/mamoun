@@ -208,9 +208,16 @@ export interface Product {
   updatedAt: string;
 }
 
+export interface ProjectRoom {
+  id: string;
+  name: string;       // e.g. "G-101", "1-201"
+}
+
 export interface ProjectFloor {
+  id: string;
   name: string;
   source: PartSource;
+  rooms?: ProjectRoom[];  // optional for backwards compat
 }
 
 export interface ProjectBuilding {
@@ -234,6 +241,10 @@ export interface BatchProduct {
   name: string;
   code: string;
   qty: number;
+  roomId?: string;      // ← assigned room for installation
+  roomName?: string;    // ← display name (e.g. "G-101")
+  buildingId?: string;  // ← for reference
+  floorId?: string;     // ← for reference
 }
 
 export interface BatchExtraItem {
@@ -538,4 +549,46 @@ export interface NavItem {
 export interface NavCategory {
   category: string;
   items: NavItem[];
+}
+
+// ═══ Installation Tracking (v9.0) ═══
+
+export type InstallItemStatus = 'pending' | 'installed' | 'missing' | 'rejected' | 'noted';
+
+export interface ProductInstallComponent {
+  partId: string;           // ref to part/accessory/top
+  partCode: string;
+  partName: string;
+  partType: 'part' | 'accessory' | 'top';
+  qty: number;              // required quantity
+  status: InstallItemStatus;
+  noteId?: string;          // link to batch note if any
+  noteText?: string;        // quick note text
+}
+
+export interface ProductInstallation {
+  id: string;
+  batchId: string;
+  batchName: string;
+  productId: string;
+  productName: string;
+  productCode: string;
+  productImg?: string;
+  projectId: string;
+  projectName: string;
+  buildingId: string;
+  buildingName: string;
+  floorId: string;
+  floorName: string;
+  roomId: string;
+  roomName: string;
+  qty: number;              // how many of this product
+  components: ProductInstallComponent[];
+  overallProgress: number;  // 0-100 calculated from components
+  installedAt?: string;
+  installedBy?: string;
+  boxId?: string;           // ref to box for final confirmation
+  boxNum?: string;          // box number for display
+  createdAt: string;
+  updatedAt: string;
 }
