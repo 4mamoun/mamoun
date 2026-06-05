@@ -3,7 +3,7 @@ import { useState, useMemo } from 'react';
 import { useDataStore } from '@/store/dataStore';
 import { usePermissionStore } from '@/store/permissionStore';
 import { useAuthStore } from '@/store/authStore';
-import type { Project, ProjectBuilding, ProjectFloor } from '@/types';
+import type { Project, ProjectBuilding, ProjectFloor, ProjectRoom } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -38,7 +38,56 @@ export default function Projects() {
   const addFloor = (bi: number) => { const u = [...buildings]; u[bi] = { ...u[bi], floors: [...u[bi].floors, { name: '', source: 'local' as const }] }; setBuildings(u); };
   const updateFloor = (bi: number, fi: number, f: Partial<ProjectFloor>) => { const u = [...buildings]; u[bi] = { ...u[bi], floors: u[bi].floors.map((fl, idx) => idx === fi ? { ...fl, ...f } : fl) }; setBuildings(u); };
   const delFloor = (bi: number, fi: number) => { const u = [...buildings]; u[bi] = { ...u[bi], floors: u[bi].floors.filter((_, idx) => idx !== fi) }; setBuildings(u); };
-  const handleSave = () => { if (!name.trim()) return; const data: Project = { id: editing?.id || uid(), name: name.trim(), code: code.trim() || undefined, client: client.trim() || undefined, buildings: buildings.filter(b => b.name.trim()).map(b => ({ ...b, floors: b.floors.filter(f => f.name.trim()) })), createdAt: editing?.createdAt || today(), updatedAt: today() }; if (editing) updateProject(editing.id, data); else addProject(data); setIsOpen(false); };
+
+  const addRoom = (bi: number, fi: number) => {
+    const u = [...buildings];
+    const floors = [...u[bi].floors];
+    const rooms = floors[fi].rooms ? [...floors[fi].rooms] : [];
+    rooms.push({ id: uid(), name: '' });
+    floors[fi] = { ...floors[fi], rooms };
+    u[bi] = { ...u[bi], floors };
+    setBuildings(u);
+  };
+
+  const updateRoom = (bi: number, fi: number, ri: number, name: string) => {
+    const u = [...buildings];
+    const floors = [...u[bi].floors];
+    const rooms = floors[fi].rooms ? [...floors[fi].rooms] : [];
+    rooms[ri] = { ...rooms[ri], name };
+    floors[fi] = { ...floors[fi], rooms };
+    u[bi] = { ...u[bi], floors };
+    setBuildings(u);
+  };
+
+  const delRoom = (bi: number, fi: number, ri: number) => {
+    const u = [...buildings];
+    const floors = [...u[bi].floors];
+    floors[fi] = { ...floors[fi], rooms: (floors[fi].rooms || []).filter((_, i) => i !== ri) };
+    u[bi] = { ...u[bi], floors };
+    setBuildings(u);
+  };
+
+  const handleSave = () => {
+    if (!name.trim()) return;
+    const data: Project = {
+      id: editing?.id || uid(),
+      name: name.trim(),
+      code: code.trim() || undefined,
+      client: client.trim() || undefined,
+      buildings: buildings.filter(b => b.name.trim()).map(b => ({
+        ...b,
+        floors: b.floors.filter(f => f.name.trim()).map((f, idx) => ({
+          ...f,
+          id: f.id || uid(),
+          rooms: (f.rooms || []).filter(r => r.name.trim()).map(r => ({ ...r }))
+        }))
+      })),
+      createdAt: editing?.createdAt || today(),
+      updatedAt: today()
+    };
+    if (editing) updateProject(editing.id, data); else addProject(data);
+    setIsOpen(false);
+  };
 
   return (
     <div className="space-y-4 animate-fade-in">
@@ -55,7 +104,15 @@ export default function Projects() {
             </div>
             {expanded === p.id && (
               <div className="px-4 pb-4 border-t border-gray-50">
-                {p.buildings.map((b) => (<div key={b.id} className="mt-3"><p className="text-xs font-bold text-gray-700 mb-1">🏢 {b.name}</p><div className="flex flex-wrap gap-2">{b.floors.map((f, fi) => (<span key={fi} className={`text-[10px] px-2 py-1 rounded-lg ${f.source === 'local' ? 'bg-green-100 text-green-700' : 'bg-purple-100 text-purple-700'}`}>{f.name}</span>))}</div></div>))}
+                {p.buildings.map((b) => (<div key={b.id} className="mt-3"><p className="text-xs font-bold text-gray-700 mb-1">🏢 {b.name}</p><div className="flex flex-wrap gap-2">{b.floors.map((f, fi) => (<div key={fi} className="flex flex-col"><span className={`text-[10px] px-2 py-1 rounded-lg ${f.source === 'local' ? 'bg-green-100 text-green-700' : 'bg-purple-100 text-purple-700'}`}>{f.name}</span>{f.rooms && f.rooms.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-1 mr-4">
+                    {f.rooms.map((r, ri) => (
+                      <span key={ri} className="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-100">
+                        🚪 {r.name}
+                      </span>
+                    ))}
+                  </div>
+                )}</div>))}</div></div>))}
               </div>
             )}
           </div>))
@@ -65,7 +122,7 @@ export default function Projects() {
         <div className="space-y-3 mt-4">
           <div className="grid grid-cols-3 gap-3"><div><label className="text-xs font-semibold text-gray-600 block mb-1">الاسم *</label><Input value={name} onChange={(e) => setName(e.target.value)} className="text-sm" /></div><div><label className="text-xs font-semibold text-gray-600 block mb-1">الكود</label><Input value={code} onChange={(e) => setCode(e.target.value)} className="text-sm" /></div><div><label className="text-xs font-semibold text-gray-600 block mb-1">العميل</label><Input value={client} onChange={(e) => setClient(e.target.value)} className="text-sm" /></div></div>
           <div className="border border-amber-200 rounded-xl p-3 bg-amber-50/20"><div className="flex justify-between mb-2"><p className="text-xs font-bold text-amber-700">المباني والطوابق</p><Button size="sm" variant="outline" onClick={addBuilding} className="text-xs h-7"><Plus className="w-3 h-3" /> مبنى</Button></div>
-          {buildings.map((b, bi) => (<div key={b.id} className="mb-3 border border-gray-100 rounded-lg p-2"><div className="flex items-center gap-2 mb-2"><Input value={b.name} onChange={(e) => updateBuilding(bi, e.target.value)} placeholder="اسم المبنى" className="text-xs flex-1" /><button onClick={() => delBuilding(bi)} className="p-1 hover:bg-red-100 rounded"><Trash2 className="w-3 h-3 text-red-500" /></button></div><div className="flex flex-wrap gap-2">{b.floors.map((f, fi) => (<div key={fi} className="flex items-center gap-1 bg-white rounded-lg px-2 py-1 border"><Input value={f.name} onChange={(e) => updateFloor(bi, fi, { name: e.target.value })} placeholder="طابق" className="text-[10px] h-6 w-20 border-0 p-0" /><select value={f.source} onChange={(e) => updateFloor(bi, fi, { source: e.target.value as 'local' | 'import' })} className="text-[10px] h-6 border-0 bg-transparent"><option value="local">محلي</option><option value="import">استيراد</option></select><button onClick={() => delFloor(bi, fi)} className="text-red-400 hover:text-red-600 text-[10px]">×</button></div>))}<button onClick={() => addFloor(bi)} className="text-[10px] text-amber-600 hover:text-amber-700 px-2 py-1">+ طابق</button></div></div>))}
+          {buildings.map((b, bi) => (<div key={b.id} className="mb-3 border border-gray-100 rounded-lg p-2"><div className="flex items-center gap-2 mb-2"><Input value={b.name} onChange={(e) => updateBuilding(bi, e.target.value)} placeholder="اسم المبنى" className="text-xs flex-1" /><button onClick={() => delBuilding(bi)} className="p-1 hover:bg-red-100 rounded"><Trash2 className="w-3 h-3 text-red-500" /></button></div><div className="flex flex-wrap gap-2">{b.floors.map((f, fi) => (<div key={fi} className="flex flex-col gap-1 bg-white rounded-lg px-2 py-1 border"><div className="flex items-center gap-1"><Input value={f.name} onChange={(e) => updateFloor(bi, fi, { name: e.target.value })} placeholder="طابق" className="text-[10px] h-6 w-20 border-0 p-0" /><select value={f.source} onChange={(e) => updateFloor(bi, fi, { source: e.target.value as 'local' | 'import' })} className="text-[10px] h-6 border-0 bg-transparent"><option value="local">محلي</option><option value="import">استيراد</option></select><button onClick={() => delFloor(bi, fi)} className="text-red-400 hover:text-red-600 text-[10px]">×</button></div><div className="flex flex-wrap gap-1">{(f.rooms || []).map((r, ri) => (<div key={ri} className="flex items-center gap-1"><Input value={r.name} onChange={(e) => updateRoom(bi, fi, ri, e.target.value)} placeholder="غرفة" className="text-[10px] h-5 w-16 border-0 p-0 bg-amber-50/50" /><button onClick={() => delRoom(bi, fi, ri)} className="text-red-400 hover:text-red-600 text-[10px]">×</button></div>))}<button onClick={() => addRoom(bi, fi)} className="text-[10px] text-amber-600 hover:text-amber-700 px-1 py-0.5">+ غرفة</button></div></div>))}<button onClick={() => addFloor(bi)} className="text-[10px] text-amber-600 hover:text-amber-700 px-2 py-1">+ طابق</button></div></div>))}
           {buildings.length === 0 && <p className="text-[10px] text-gray-400 text-center py-2">لا توجد مباني</p>}</div>
           <div className="flex justify-end gap-2 pt-2 border-t"><Button variant="outline" size="sm" onClick={() => setIsOpen(false)}>إلغاء</Button><Button size="sm" onClick={handleSave} className="bg-gradient-to-r from-amber-500 to-amber-600">{editing ? 'حفظ' : 'إضافة'}</Button></div>
         </div>

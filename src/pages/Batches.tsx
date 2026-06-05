@@ -57,11 +57,11 @@ function generateBatchPickList(
 // BATCH DETAIL — reads latest batch from store directly
 // ═══════════════════════════════════════════
 function BatchDetail({
-  batchId, onBack, onShowNotes, canEditFlag, canDeleteFlag, getProjectName, allProducts, parts, accessories, tops, updateBatch, deleteBatch
+  batchId, onBack, onShowNotes, canEditFlag, canDeleteFlag, getProjectName, allProducts, parts, accessories, tops, updateBatch, deleteBatch, projects
 }: {
   batchId: string; onBack: () => void; onShowNotes: () => void; canEditFlag: boolean; canDeleteFlag: boolean;
   getProjectName: (id: string) => string; allProducts: Product[]; parts: any[]; accessories: any[]; tops: any[];
-  updateBatch: (id: string, patch: any) => void; deleteBatch: (id: string) => void;
+  updateBatch: (id: string, patch: any) => void; deleteBatch: (id: string) => void; projects: any[];
 }) {
   const navigate = useNavigate();
   // Read current batch DIRECTLY from store (live sync)
@@ -71,6 +71,9 @@ function BatchDetail({
   const [showEdit, setShowEdit] = useState(false);
   const [detailSearch, setDetailSearch] = useState('');
   const [activeTab, setActiveTab] = useState<'prods' | 'parts' | 'acc' | 'tops'>('prods');
+
+  // ─── State للغرفة المختارة ───
+  const [selectedRoom, setSelectedRoom] = useState<{buildingId: string, floorId: string, roomId: string, roomName: string} | null>(null);
 
   const [editName, setEditName] = useState(current.name || '');
   const [editInvoiceNo, setEditInvoiceNo] = useState(current.invoiceNo || '');
@@ -82,6 +85,36 @@ function BatchDetail({
     updateBatch(current.id, { ...patch, updatedAt: today() });
   };
 
+  // ─── استخراج الغرف من المشروع ───
+  const getProjectRooms = useMemo(() => {
+    const project = projects.find(p => p.id === current.projectId);
+    if (!project) return [];
+    const rooms: {buildingId: string, buildingName: string, floorId: string, floorName: string, roomId: string, roomName: string, fullName: string}[] = [];
+    for (const b of project.buildings) {
+      for (const f of b.floors) {
+        if (f.rooms && f.rooms.length > 0) {
+          for (const r of f.rooms) {
+            rooms.push({
+              buildingId: b.id, buildingName: b.name,
+              floorId: f.id || f.name, floorName: f.name,
+              roomId: r.id, roomName: r.name,
+              fullName: `${b.name} / ${f.name} / ${r.name}`
+            });
+          }
+        } else {
+          // fallback: floor itself as a "location"
+          rooms.push({
+            buildingId: b.id, buildingName: b.name,
+            floorId: f.id || f.name, floorName: f.name,
+            roomId: `${f.id || f.name}_general`, roomName: 'عام',
+            fullName: `${b.name} / ${f.name} / عام`
+          });
+        }
+      }
+    }
+    return rooms;
+  }, [projects, current.projectId]);
+
   // Auto-split pick list
   const { localItems, importItems } = useMemo(
     () => generateBatchPickList(current.prods, allProducts, parts, accessories, tops),
@@ -92,9 +125,19 @@ function BatchDetail({
   const addProductToBatch = (prodId: string) => {
     const prod = allProducts.find(p => p.id === prodId);
     if (!prod) return;
-    const exists = current.prods.find(p => p.id === prodId);
-    if (exists) saveCurrent({ prods: current.prods.map(p => p.id === prodId ? { ...p, qty: p.qty + 1 } : p) });
-    else saveCurrent({ prods: [...current.prods, { id: prod.id, name: prod.name, code: prod.code, qty: 1 }] });
+    const roomInfo = selectedRoom || { roomId: undefined, roomName: undefined, buildingId: undefined, floorId: undefined };
+    const exists = current.prods.find(p => p.id === prodId && p.roomId === roomInfo.roomId);
+    if (exists) {
+      saveCurrent({ prods: current.prods.map(p => p.id === prodId && p.roomId === roomInfo.roomId ? { ...p, qty: p.qty + 1 } : p) });
+    } else {
+      saveCurrent({ prods: [...current.prods, {
+        id: prod.id, name: prod.name, code: prod.code, qty: 1,
+        roomId: roomInfo.roomId,
+        roomName: roomInfo.roomName,
+        buildingId: roomInfo.buildingId,
+        floorId: roomInfo.floorId
+      }] });
+    }
   };
   const removeProduct = (prodId: string) => saveCurrent({ prods: current.prods.filter(p => p.id !== prodId) });
   const setProdQty = (prodId: string, qty: number) => {
@@ -195,8 +238,16 @@ function BatchDetail({
               <div>
                 <p className="text-[10px] font-bold text-gray-500 mb-1 flex items-center gap-1"><Package className="w-3 h-3" /> المنتجات ({current.prods.length})</p>
                 {current.prods.map(p => (
-                  <div key={p.id} className="bg-white rounded-lg p-2 mb-1 flex items-center gap-2">
-                    <div className="flex-1 min-w-0"><p className="text-[11px] font-medium truncate">{p.name}</p><p className="text-[9px] text-gray-400">{p.code}</p></div>
+                  <div key={`${p.id}-${p.roomId || 'no-room'}`} className="bg-white rounded-lg p-2 mb-1 flex items-center gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[11px] font-medium truncate">{p.name}</p>
+                      <p className="text-[9px] text-gray-400">{p.code}</p>
+                      {p.roomName && (
+                        <span className="text-[9px] bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded-full inline-block mt-0.5">
+                          {p.roomName}
+                        </span>
+                      )}
+                    </div>
                     <div className="flex items-center gap-1">
                       <button onClick={() => setProdQty(p.id, p.qty - 1)} className="w-5 h-5 rounded bg-gray-100 flex items-center justify-center"><Minus className="w-2.5 h-2.5" /></button>
                       <span className="text-xs font-bold w-4 text-center">{p.qty}</span>
@@ -302,34 +353,55 @@ function BatchDetail({
 
           <div className="flex-1 overflow-y-auto p-4">
             {activeTab === 'prods' && (
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-                {filteredProds.map(prod => {
-                  const inBatch = current.prods.find(p => p.id === prod.id);
-                  return (
-                    <div key={prod.id} className={`bg-white rounded-xl border-2 transition-all overflow-hidden ${inBatch ? 'border-cyan-400 shadow-md' : 'border-gray-100 hover:border-gray-200'}`}>
-                      <div className="aspect-square bg-gray-50 relative">
-                        {prod.img ? <img src={prod.img} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center"><ImageIcon className="w-8 h-8 text-gray-200" /></div>}
-                        {inBatch && <div className="absolute top-2 right-2 bg-cyan-500 text-white text-[10px] px-1.5 py-0.5 rounded-full font-bold">{inBatch.qty}</div>}
-                      </div>
-                      <div className="p-2.5">
-                        <p className="text-[11px] font-bold text-gray-800 truncate">{prod.name}</p>
-                        <p className="text-[9px] text-gray-400 font-mono">{prod.code}</p>
-                        <div className="flex items-center gap-1 mt-2">
-                          {inBatch ? (
-                            <>
-                              <button onClick={() => setProdQty(prod.id, inBatch.qty - 1)} className="w-7 h-7 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center"><Minus className="w-3.5 h-3.5" /></button>
-                              <span className="flex-1 text-center text-sm font-bold">{inBatch.qty}</span>
-                              <button onClick={() => setProdQty(prod.id, inBatch.qty + 1)} className="w-7 h-7 rounded-lg bg-cyan-100 hover:bg-cyan-200 flex items-center justify-center"><Plus className="w-3.5 h-3.5 text-cyan-700" /></button>
-                            </>
-                          ) : (
-                            <button onClick={() => addProductToBatch(prod.id)} className="flex-1 h-8 rounded-lg bg-gray-100 hover:bg-cyan-50 text-xs font-bold text-gray-600 hover:text-cyan-700 transition-colors">إضافة</button>
-                          )}
+              <>
+                {/* Dropdown تحديد الغرفة */}
+                {getProjectRooms.length > 0 && (
+                  <div className="mb-3">
+                    <label className="text-[10px] font-semibold text-gray-500 block mb-1">موقع التركيب (اختياري)</label>
+                    <select
+                      className="text-xs border rounded-lg px-2 py-1.5 w-full bg-white"
+                      value={selectedRoom?.roomId || ''}
+                      onChange={(e) => {
+                        const room = getProjectRooms.find(r => r.roomId === e.target.value);
+                        setSelectedRoom(room || null);
+                      }}
+                    >
+                      <option value="">— اختر الغرفة —</option>
+                      {getProjectRooms.map(r => (
+                        <option key={r.roomId} value={r.roomId}>{r.fullName}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+                  {filteredProds.map(prod => {
+                    const inBatch = current.prods.find(p => p.id === prod.id);
+                    return (
+                      <div key={prod.id} className={`bg-white rounded-xl border-2 transition-all overflow-hidden ${inBatch ? 'border-cyan-400 shadow-md' : 'border-gray-100 hover:border-gray-200'}`}>
+                        <div className="aspect-square bg-gray-50 relative">
+                          {prod.img ? <img src={prod.img} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center"><ImageIcon className="w-8 h-8 text-gray-200" /></div>}
+                          {inBatch && <div className="absolute top-2 right-2 bg-cyan-500 text-white text-[10px] px-1.5 py-0.5 rounded-full font-bold">{inBatch.qty}</div>}
+                        </div>
+                        <div className="p-2.5">
+                          <p className="text-[11px] font-bold text-gray-800 truncate">{prod.name}</p>
+                          <p className="text-[9px] text-gray-400 font-mono">{prod.code}</p>
+                          <div className="flex items-center gap-1 mt-2">
+                            {inBatch ? (
+                              <>
+                                <button onClick={() => setProdQty(prod.id, inBatch.qty - 1)} className="w-7 h-7 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center"><Minus className="w-3.5 h-3.5" /></button>
+                                <span className="flex-1 text-center text-sm font-bold">{inBatch.qty}</span>
+                                <button onClick={() => setProdQty(prod.id, inBatch.qty + 1)} className="w-7 h-7 rounded-lg bg-cyan-100 hover:bg-cyan-200 flex items-center justify-center"><Plus className="w-3.5 h-3.5 text-cyan-700" /></button>
+                              </>
+                            ) : (
+                              <button onClick={() => addProductToBatch(prod.id)} className="flex-1 h-8 rounded-lg bg-gray-100 hover:bg-cyan-50 text-xs font-bold text-gray-600 hover:text-cyan-700 transition-colors">إضافة</button>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              </>
             )}
             {activeTab === 'parts' && (
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
@@ -504,6 +576,7 @@ export default function Batches() {
       tops={tops}
       updateBatch={updateBatch}
       deleteBatch={deleteBatch}
+      projects={projects}
     />;
   }
 
