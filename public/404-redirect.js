@@ -1,0 +1,1 @@
+sessionStorage.redirect = location.href;

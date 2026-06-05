@@ -1,0 +1,84 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ═══ Helper Functions ═══
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+    function isAdmin() {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    function isActiveUser() {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active';
+    }
+    function isAdminOrOwner(userId) {
+      return isAdmin() || isOwner(userId);
+    }
+
+    // ═══ Users Collection ═══
+    match /users/{userId} {
+      // Anyone authenticated can read user list (for dropdowns, etc.)
+      allow read: if isAuthenticated();
+      // Only admin can create/update/delete users
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ═══ Pending Users ═══
+    match /pendingUsers/{userId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated(); // New registrations
+      allow update, delete: if isAdmin();
+    }
+
+    // ═══ Archived Users ═══
+    match /archivedUsers/{userId} {
+      allow read, update, delete: if isAdmin();
+    }
+
+    // ═══ Blocked Emails/Logins ═══
+    match /blockedEmails/{email} {
+      allow read, write: if isAdmin();
+    }
+    match /blockedLogins/{userId} {
+      allow read, write: if isAdmin();
+    }
+
+    // ═══ App Settings ═══
+    match /app/settings {
+      allow read: if isActiveUser();
+      allow write: if isAdmin();
+    }
+    match /app/ping {
+      allow read, write: if isAuthenticated();
+    }
+
+    // ═══ Data Collections (parts, tops, accessories, products, projects) ═══
+    match /{collection}/{docId} {
+      allow read: if isActiveUser() &&
+        collection in ['parts', 'tops', 'accessories', 'products', 'projects', 'batches',
+                       'containers', 'pallets', 'boxes', 'movements', 'rejected',
+                       'inspections', 'stockTransactions', 'batchNotes', 'notifications'];
+      allow create, update: if isActiveUser() &&
+        collection in ['parts', 'tops', 'accessories', 'products', 'projects', 'batches',
+                       'containers', 'pallets', 'boxes', 'movements', 'rejected',
+                       'inspections', 'stockTransactions', 'batchNotes', 'notifications'];
+      allow delete: if isActiveUser() &&
+        collection in ['parts', 'tops', 'accessories', 'products', 'projects', 'batches',
+                       'containers', 'pallets', 'boxes', 'movements', 'rejected',
+                       'inspections', 'stockTransactions', 'batchNotes', 'notifications'];
+    }
+
+    // ═══ Deny everything else ═══
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
