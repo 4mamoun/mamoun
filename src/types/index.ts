@@ -214,7 +214,7 @@ export interface ProjectRoom {
 }
 
 export interface ProjectFloor {
-  id: string;
+  id?: string;             // optional — old data may not have it
   name: string;
   source: PartSource;
   rooms?: ProjectRoom[];  // optional for backwards compat
