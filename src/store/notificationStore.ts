@@ -73,7 +73,7 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
     get().refresh(role);
   },
 
-  refresh: (role = 'admin') => {
+  refresh: (_role = 'admin') => {
     // role used for filtering notifications by user role
     void role;
 
