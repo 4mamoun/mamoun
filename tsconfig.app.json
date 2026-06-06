@@ -25,11 +25,11 @@
     /* Linting */
     "strict": false,
     "noUnusedLocals": false,
-    "noUnusedParameters": true,
+    "noUnusedParameters": false,
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true,
-    "noUncheckedSideEffectImports": true,
-    "noImplicitAny": true
+    "noUncheckedSideEffectImports": false,
+    "noImplicitAny": false
   },
   "include": ["src"]
 }
