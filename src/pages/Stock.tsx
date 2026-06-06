@@ -46,15 +46,11 @@ export default function Stock() {
   const [scOpen, setScOpen] = useState(false);
   const [scItem, setScItem] = useState<UnifiedMaterial | null>(null);
 
-  // Cleanup debounce timer on unmount
-  useEffect(() => {
-    return () => { if (searchTimer) clearTimeout(searchTimer); };
-  }, [searchTimer]);
+  let timer: ReturnType<typeof setTimeout>;
   const handleSearch = (v: string) => {
     setSearch(v);
-    if (searchTimer) clearTimeout(searchTimer);
-    const t = setTimeout(() => setDeb(v.trim().toLowerCase()), 300);
-    setSearchTimer(t);
+    clearTimeout(timer);
+    timer = setTimeout(() => setDeb(v.trim().toLowerCase()), 300);
   };
 
   // Build unified materials list

@@ -505,7 +505,7 @@ export default function Settings() {
               onClick={() => {
                 if (confirm('هل أنت متأكد من مسح كل البيانات التجريبية؟\n\nسيتم مسح:\n- القطع والاكسسوارات والتوبات\n- المنتجات والمشاريع\n- الحاويات والشحنات\n- حركات المخزون\n- القطع المرفوضة والفحوصات\n\nلن يُمسح:\n- إعدادات الشركة\n- المستخدمين')) {
                   localStorage.setItem('demo_seeded', 'cleared');
-                  clearAll();
+                  clearAll(currentUser?.role || '');
                   alert('تم مسح البيانات بنجاح! سيتم تسجيل خروجك لتحديث النظام.');
                   logout();
                 }

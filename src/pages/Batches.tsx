@@ -64,6 +64,7 @@ function BatchDetail({
   updateBatch: (id: string, patch: any) => void; deleteBatch: (id: string) => void; projects: any[];
 }) {
   const navigate = useNavigate();
+  const { user } = useAuthStore();
   // Read current batch DIRECTLY from store (live sync)
   const { batches } = useDataStore();
   const current = batches.find(b => b.id === batchId) || { id: batchId, name: '', projectId: '', prods: [], extraParts: [], extraAccessories: [], extraTops: [], source: 'local', status: 'جديد', createdAt: today(), updatedAt: today() } as Batch;

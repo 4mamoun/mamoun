@@ -221,7 +221,8 @@ async function fetchPage(
   const snap = await getDocs(q);
   const docs: AppUser[] = [];
   snap.forEach((d) => {
-    docs.push({ ...d.data(), id: d.id } as AppUser);
+    const data = d.data() as Record<string, unknown>;
+    docs.push({ ...data, id: d.id } as AppUser);
   });
   const lastDoc = snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : undefined;
   return { docs, lastDoc };
