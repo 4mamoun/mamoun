@@ -73,10 +73,6 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
     get().refresh(role);
   },
 
-  refresh: (role = 'admin') => {
-    // role used for filtering notifications by user role
-    void role;
-
   refresh: (_role = 'admin') => {
     // Notifications generated from LIVE data — no persistence needed
     let notifs: AppNotification[] = [];
