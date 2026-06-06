@@ -8,10 +8,11 @@ import { useAuthStore } from '@/store/authStore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Search, Plus, X, Trash2, GripVertical, Truck, Weight, Ruler, AlertTriangle, Package, ChevronLeft, BoxSelect, Settings, Save, Lock, Archive, ArchiveRestore, CheckCircle, Send, LayoutTemplate, Hash } from 'lucide-react';
+import { Search, Plus, X, Trash2, GripVertical, Truck, Weight, Ruler, AlertTriangle, Package, ChevronLeft, BoxSelect, Settings, Save, Lock, Archive, ArchiveRestore, CheckCircle, Send, LayoutTemplate, Hash, Ship } from 'lucide-react';
 import { DEFAULT_CONTAINER_TEMPLATES, getNextContainerNumber } from '@/lib/templates';
 import type { ContainerTemplate } from '@/types';
 import type { Container, Box } from '@/types';
+import { toast } from 'sonner';
 
 function uid() { return Date.now().toString(36) + Math.random().toString(36).substr(2, 5); }
 function today() { return new Date().toISOString().split('T')[0]; }
