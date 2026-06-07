@@ -1,6 +1,5 @@
 {
   "hosting": {
-    "site": "mamoun-05-2026",
     "public": "dist",
     "ignore": [
       "firebase.json",
