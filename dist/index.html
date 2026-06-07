@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Content-Security-Policy" content="default-src * 'self' 'unsafe-inline' 'unsafe-eval' data: blob: filesystem:; script-src * 'self' 'unsafe-inline' 'unsafe-eval' blob:; connect-src * 'self' wss: https: ws: http: https://*.firebaseio.com https://*.googleapis.com; style-src * 'self' 'unsafe-inline'; img-src * 'self' data: blob: https: http:; font-src * 'self' data:;">
+    <title>نظام إدارة الإنتاج والشحن</title>
+    <link id="app-favicon" rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='url(%23g)'/><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0%25' stop-color='%23667eea'/><stop offset='100%25' stop-color='%23764ba2'/></linearGradient></defs><text y='.9em' x='50' text-anchor='middle' fill='white' font-size='55' font-weight='bold'>M</text></svg>" />
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      #splash-screen {
+        position: fixed; inset: 0; z-index: 99999;
+        background: linear-gradient(180deg, #0c1222 0%, #0f172a 40%, #1a1f3a 100%);
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        transition: opacity 1s ease, visibility 1s ease;
+      }
+      #splash-screen.fade-out { opacity: 0; visibility: hidden; pointer-events: none; }
+      .splash-ring {
+        width: 100px; height: 100px; border-radius: 50%;
+        border: 2px solid rgba(59, 130, 246, 0.15);
+        display: flex; align-items: center; justify-content: center;
+        margin-bottom: 28px;
+        animation: splashRing 3s ease-in-out infinite;
+      }
+      .splash-logo-wrap {
+        width: 80px; height: 80px; border-radius: 24px;
+        background: linear-gradient(135deg, #3b82f6 0%, #6366f1 50%, #8b5cf6 100%);
+        display: flex; align-items: center; justify-content: center;
+        box-shadow: 0 0 60px rgba(59,130,246,0.35), 0 0 120px rgba(99,102,241,0.15);
+        overflow: hidden;
+        animation: splashLogoIn 0.8s cubic-bezier(0.16, 1, 0.3, 1), splashPulse 3s ease-in-out 1s infinite;
+      }
+      .splash-logo-wrap img { width: 60%; height: 60%; -o-object-fit: contain; object-fit: contain; }
+      .splash-logo-wrap svg { width: 40px; height: 40px; color: white; }
+      .splash-title {
+        color: #f8fafc; font-family: system-ui, -apple-system, sans-serif;
+        font-size: 24px; font-weight: 800; letter-spacing: 1px;
+        margin-bottom: 8px; animation: splashUp 0.7s ease-out 0.3s both;
+      }
+      .splash-sub {
+        color: #64748b; font-family: system-ui, sans-serif;
+        font-size: 13px; font-weight: 400; letter-spacing: 2px;
+        animation: splashUp 0.7s ease-out 0.45s both;
+      }
+      .splash-loader {
+        position: absolute; bottom: 100px;
+        display: flex; gap: 6px;
+        animation: splashUp 0.6s ease-out 0.6s both;
+      }
+      .splash-loader .dot {
+        width: 6px; height: 6px; border-radius: 50%;
+        animation: splashDot 1.4s ease-in-out infinite;
+      }
+      .splash-loader .dot:nth-child(1) { background: #3b82f6; }
+      .splash-loader .dot:nth-child(2) { background: #6366f1; animation-delay: 0.2s; }
+      .splash-loader .dot:nth-child(3) { background: #8b5cf6; animation-delay: 0.4s; }
+      .splash-ver {
+        position: absolute; bottom: 50px; color: #475569;
+        font-family: system-ui, sans-serif; font-size: 11px;
+        letter-spacing: 0.5px; animation: splashUp 0.6s ease-out 0.7s both;
+      }
+      .splash-ver span { color: #3b82f6; font-weight: 500; }
+      .splash-kimi {
+        position: absolute; bottom: 28px; color: #334155;
+        font-family: system-ui, sans-serif; font-size: 9px;
+        letter-spacing: 1.5px; text-transform: uppercase;
+        animation: splashUp 0.6s ease-out 0.8s both;
+      }
+      .splash-kimi span { color: #6366f1; font-weight: 500; }
+      @keyframes splashLogoIn { from { opacity: 0; transform: scale(0.6); } to { opacity: 1; transform: scale(1); } }
+      @keyframes splashUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+      @keyframes splashPulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.04)} }
+      @keyframes splashDot { 0%,80%,100%{transform:scale(0.5);opacity:.3} 40%{transform:scale(1);opacity:1} }
+      @keyframes splashRing { 0%,100%{transform:scale(1);opacity:1} 50%{transform:scale(1.08);opacity:.6} }
+    </style>
+    <script type="module" crossorigin src="/assets/index-BU9jPFUr.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DuNJOzCq.css">
+  </head>
+  <body>
+    <div id="splash-screen">
+      <div class="splash-ring">
+        <div class="splash-logo-wrap" id="splash-logo">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        </div>
+      </div>
+      <div class="splash-title" id="splash-title">PRODUCTION SYSTEM</div>
+      <div class="splash-sub" id="splash-sub">نظام إدارة الإنتاج والشحن</div>
+      <div class="splash-loader"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
+      <div class="splash-ver">by <span id="splash-author">mamoun alsmahin</span></div>
+      <div class="splash-kimi">Powered by <span>kimi.com</span></div>
+    </div>
+    <div id="root"></div>
+    <script>
+      (function() {
+        function hideSplash() {
+          var el = document.getElementById('splash-screen');
+          if (el) el.classList.add('fade-out');
+          setTimeout(function() { var el2 = document.getElementById('splash-screen'); if (el2 && el2.parentNode) el2.parentNode.removeChild(el2); }, 1000);
+        }
+        // Load company logo from localStorage if exists
+        try {
+          var s = localStorage.getItem('settings');
+          if (s) { var cfg = JSON.parse(s); if (cfg.companyLogo) {
+            document.getElementById('splash-logo').innerHTML = '<img src="' + cfg.companyLogo + '" alt="" />';
+          } if (cfg.companyName) {
+            document.getElementById('splash-sub').textContent = cfg.companyName;
+          }}
+        } catch(e) {}
+        // Hide on window load (app ready), with max 6s fallback
+        if (document.readyState === 'complete') {
+          hideSplash();
+        } else {
+          window.addEventListener('load', hideSplash);
+          setTimeout(hideSplash, 6000);
+        }
+      })();
+    </script>
+  </body>
+</html>
