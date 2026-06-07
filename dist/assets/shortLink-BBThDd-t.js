@@ -1,0 +1,1 @@
+const e="0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";function r(t){if(t===0)return e[0];let o="";for(;t>0;)o=e[t%62]+o,t=Math.floor(t/62);return o}function n(){const t=Date.now()%1e9,o=Math.floor(Math.random()*1e6);return r(t*1e6+o)}function a(t){return`${window.location.origin}/p/${t}`}export{a,n as g};
