@@ -1,9 +1,11 @@
-import { Suspense, lazy } from 'react';
+import { Suspense, lazy, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import Layout from '@/components/layout/Layout';
 import DataSync from '@/components/DataSync';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import Login from '@/pages/Login';
+import { useAuthStore } from '@/store/authStore';
+import { usePermissionStore } from '@/store/permissionStore';
 
 /* ─── Lazy-loaded pages (28) ─── */
 const Dashboard          = lazy(() => import('@/pages/Dashboard'));
@@ -52,6 +54,19 @@ function SuspendedRoute({ element }: { element: React.ReactNode }) {
 }
 
 function App() {
+  useEffect(() => {
+    // Initialize auth listener (Firebase onAuthStateChanged)
+    const unsubAuth = useAuthStore.getState().init();
+    // Load roles from Firestore
+    usePermissionStore.getState().loadRoles();
+    // Subscribe to real-time role updates
+    const unsubRoles = usePermissionStore.getState().subscribeRoles();
+    return () => {
+      unsubAuth?.();
+      unsubRoles?.();
+    };
+  }, []);
+
   return (
     <ErrorBoundary>
       <DataSync />
