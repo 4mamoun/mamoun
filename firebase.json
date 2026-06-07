@@ -7,7 +7,13 @@
       "**/.*",
       "**/node_modules/**"
     ],
+    "cleanUrls": true,
+    "trailingSlash": false,
     "rewrites": [
+      {
+        "source": "/assets/**",
+        "destination": "/assets/**"
+      },
       {
         "source": "**",
         "destination": "/index.html"
@@ -20,10 +26,6 @@
           {
             "key": "Cache-Control",
             "value": "no-cache, no-store, must-revalidate"
-          },
-          {
-            "key": "Content-Security-Policy",
-            "value": "default-src * 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'; connect-src * 'self' wss: https: ws: https://*.firebaseio.com https://*.googleapis.com https://*.firebaseapp.com; style-src * 'self' 'unsafe-inline'; img-src * 'self' data: blob: https:; font-src * 'self' data:; frame-src * 'self';"
           }
         ]
       },
