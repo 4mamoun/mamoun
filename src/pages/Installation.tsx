@@ -1,6 +1,6 @@
 // ============================================================
-// Installation v9.0 — شاشة التركيب بالمنتجات
-// كل منتج = card مستقل مع شريط تقدم + قطع + حالة
+// Installation v10.0 — شاشة التركيب بالمنتجات (مُعاد هيكلتها)
+// كل منتج = بطاقة مستقلة مع صورة + قطع + أزرار حالة + موقع
 // Firestore real-time — بدون localStorage
 // ============================================================
 
@@ -13,11 +13,11 @@ import {
   Wrench, CheckCircle, Building2, Layers, Package,
   LogOut, ChevronDown, ChevronUp, Box, Puzzle, Gem, Sofa,
   XSquare, AlertTriangle, MessageSquare,
-  MapPin, Percent, StickyNote,
+  MapPin, Percent, StickyNote, ImageIcon, Hash,
 } from 'lucide-react';
 import type {
   ProductInstallation, ProductInstallComponent, InstallItemStatus,
-  ProductComponent, BatchProduct,
+  ProductComponent, BatchProduct, Product,
 } from '@/types';
 
 // ─── Helpers ───
@@ -71,20 +71,21 @@ function progressTextColor(pct: number): string {
   return 'text-green-600';
 }
 
-// ─── Grouping key ───
+// ─── Group by project+building+floor+room ───
 interface InstallGroup {
-  batchId: string;
-  batchName: string;
   projectId: string;
   projectName: string;
+  buildingName: string;
+  floorName: string;
+  roomName: string;
   products: ProductInstallation[];
 }
 
 export default function Installation() {
   const {
-    boxes, containers, projects, batches, products,
-    installations, addInstallation, updateInstallation,
-    updateBox,
+    projects, batches, products, installations,
+    addInstallation, updateInstallation, updateBox,
+    boxes,
   } = useDataStore();
   const user = useAuthStore(s => s.user);
 
@@ -93,127 +94,126 @@ export default function Installation() {
   const [notesBatchId, setNotesBatchId] = useState('');
   const [notesBatchName, setNotesBatchName] = useState('');
 
-  // ─── Get delivered batches ───
-  const deliveredBatches = useMemo(() => {
-    return batches.filter(batch => {
-      const batchBoxes = boxes.filter(b => b.batchId === batch.id);
-      const batchContainerIds = new Set(
-        batchBoxes.filter(b => b.containerId).map(b => b.containerId as string)
-      );
-      const batchContainers = containers.filter(c => batchContainerIds.has(c.id));
-      return batchContainers.length > 0 && batchContainers.every(c => c.shipmentStatus === 'delivered');
-    });
-  }, [batches, boxes, containers]);
-
-  // ─── Build product installations ───
-  // Link: batch → boxes → box.prods → product → product.components
+  // ─── Build product installations from batch.prods ───
+  // New: Use batch.prods directly (not just delivered boxes)
   const installGroups: InstallGroup[] = useMemo(() => {
     const groups: InstallGroup[] = [];
 
-    for (const batch of deliveredBatches) {
+    for (const batch of batches) {
       const project = projects.find(p => p.id === batch.projectId);
-      const batchBoxes = boxes.filter(b => b.batchId === batch.id);
+      if (!project) continue;
 
-      // Collect all products across all boxes in this batch
-      const prodMap = new Map<string, ProductInstallation>();
+      for (const bp of batch.prods) {
+        const productInfo = products.find(p => p.id === bp.id || p.code === bp.code);
+        if (!productInfo) continue;
 
-      for (const box of batchBoxes) {
-        // Skip already fully installed boxes
-        const isBoxInstalled = !!box.installed;
+        // Resolve location from bp (batch product room info)
+        let buildingName = '—';
+        let floorName = '—';
+        let roomName = bp.roomName || '—';
 
-        for (const boxProd of (box.prods || [])) {
-          const productInfo = products.find(p => p.id === boxProd.id || p.code === boxProd.code);
-          if (!productInfo) continue;
-
-          // Find batchProduct for location info
-          const bp: BatchProduct | undefined = batch.prods.find(
-            (bpr: BatchProduct) => bpr.id === boxProd.id || bpr.code === boxProd.code
-          );
-
-          // Build unique key per product+box combination
-          const key = `${batch.id}_${box.id}_${productInfo.id}`;
-
-          // Check if we already have an installation record in the store
-          const existing = installations.find(i =>
-            i.batchId === batch.id && i.productId === productInfo.id && i.boxId === box.id
-          );
-
-          // Build components from product.components
-          const comps: ProductInstallComponent[] = existing?.components ||
-            productInfo.components.map((pc: ProductComponent) => ({
-              partId: pc.id,
-              partCode: pc.code,
-              partName: pc.name,
-              partType: compTypeToPartType(pc.compType),
-              qty: pc.qty * (boxProd.qty || 1),
-              status: 'pending' as InstallItemStatus,
-            }));
-
-          // Resolve location info
-          let buildingName = box.bldg || '—';
-          let floorName = box.flr || '—';
-          let roomName = bp?.roomName || '—';
-
-          // Try to resolve from project if IDs exist
-          if (project && bp?.buildingId) {
-            const bldg = project.buildings.find(b => b.id === bp.buildingId);
-            if (bldg) {
-              buildingName = bldg.name;
-              if (bp?.floorId) {
-                const flr = bldg.floors.find(f => f.id === bp.floorId);
-                if (flr) floorName = flr.name;
-              }
+        if (bp.buildingId) {
+          const bldg = project.buildings.find(b => b.id === bp.buildingId);
+          if (bldg) {
+            buildingName = bldg.name;
+            if (bp.floorId) {
+              const flr = bldg.floors.find(f => (f.id || f.name) === bp.floorId);
+              if (flr) floorName = flr.name;
             }
           }
-
-          const installedCount = comps.filter(c => c.status === 'installed').length;
-          const totalCount = comps.length;
-          const progress = totalCount > 0 ? Math.round((installedCount / totalCount) * 100) : 0;
-
-          const inst: ProductInstallation = {
-            id: existing?.id || uid(),
-            batchId: batch.id,
-            batchName: batch.name,
-            productId: productInfo.id,
-            productName: productInfo.name,
-            productCode: productInfo.code,
-            productImg: productInfo.img,
-            projectId: project?.id || batch.projectId || '',
-            projectName: project?.name || '—',
-            buildingId: bp?.buildingId || '',
-            buildingName,
-            floorId: bp?.floorId || '',
-            floorName,
-            roomId: bp?.roomId || '',
-            roomName,
-            qty: boxProd.qty || 1,
-            components: comps,
-            overallProgress: existing?.overallProgress ?? progress,
-            installedAt: existing?.installedAt || box.installedAt,
-            installedBy: existing?.installedBy || box.installedBy,
-            boxId: box.id,
-            boxNum: box.num,
-            createdAt: existing?.createdAt || new Date().toISOString(),
-            updatedAt: existing?.updatedAt || new Date().toISOString(),
-          };
-
-          prodMap.set(key, inst);
         }
-      }
 
-      if (prodMap.size > 0) {
-        groups.push({
+        // Build unique key per batch+product+room
+        const key = `${batch.id}_${productInfo.id}_${bp.roomId || 'no-room'}`;
+
+        // Check if we have an existing installation record
+        const existing = installations.find(i =>
+          i.batchId === batch.id && i.productId === productInfo.id && i.roomId === (bp.roomId || '')
+        );
+
+        // Build components from product.components
+        const comps: ProductInstallComponent[] = existing?.components ||
+          productInfo.components.map((pc: ProductComponent) => ({
+            partId: pc.id,
+            partCode: pc.code,
+            partName: pc.name,
+            partType: compTypeToPartType(pc.compType),
+            qty: pc.qty * (bp.qty || 1),
+            status: 'pending' as InstallItemStatus,
+          }));
+
+        const installedCount = comps.filter(c => c.status === 'installed').length;
+        const totalCount = comps.length;
+        const progress = totalCount > 0 ? Math.round((installedCount / totalCount) * 100) : 0;
+
+        // Find associated box (if delivered)
+        const batchBoxes = boxes.filter(b => b.batchId === batch.id);
+        const boxWithProd = batchBoxes.find(b =>
+          b.prods?.some((p: any) => p.id === productInfo.id)
+        );
+
+        const inst: ProductInstallation = {
+          id: existing?.id || uid(),
           batchId: batch.id,
           batchName: batch.name,
-          projectId: project?.id || batch.projectId || '',
-          projectName: project?.name || '—',
-          products: Array.from(prodMap.values()),
-        });
+          productId: productInfo.id,
+          productName: productInfo.name,
+          productCode: productInfo.code,
+          productImg: productInfo.img,
+          projectId: project.id,
+          projectName: project.name,
+          buildingId: bp.buildingId || '',
+          buildingName,
+          floorId: bp.floorId || '',
+          floorName,
+          roomId: bp.roomId || '',
+          roomName,
+          qty: bp.qty || 1,
+          components: comps,
+          overallProgress: existing?.overallProgress ?? progress,
+          installedAt: existing?.installedAt,
+          installedBy: existing?.installedBy,
+          boxId: boxWithProd?.id,
+          boxNum: boxWithProd?.num,
+          createdAt: existing?.createdAt || new Date().toISOString(),
+          updatedAt: existing?.updatedAt || new Date().toISOString(),
+        };
+
+        // Find or create group
+        const groupKey = `${project.id}_${buildingName}_${floorName}_${roomName}`;
+        let group = groups.find(g =>
+          g.projectId === project.id &&
+          g.buildingName === buildingName &&
+          g.floorName === floorName &&
+          g.roomName === roomName
+        );
+
+        if (!group) {
+          group = {
+            projectId: project.id,
+            projectName: project.name,
+            buildingName,
+            floorName,
+            roomName,
+            products: [],
+          };
+          groups.push(group);
+        }
+
+        // Avoid duplicate
+        if (!group.products.find(p => p.id === inst.id)) {
+          group.products.push(inst);
+        }
       }
     }
 
-    return groups;
-  }, [deliveredBatches, boxes, products, projects, installations, batches]);
+    // Sort: by building → floor → room
+    return groups.sort((a, b) => {
+      if (a.buildingName !== b.buildingName) return a.buildingName.localeCompare(b.buildingName);
+      if (a.floorName !== b.floorName) return a.floorName.localeCompare(b.floorName);
+      return a.roomName.localeCompare(b.roomName);
+    });
+  }, [batches, projects, products, installations, boxes]);
 
   // ─── Handle component status change ───
   const handleComponentStatus = async (
@@ -256,7 +256,6 @@ export default function Installation() {
     const now = new Date().toISOString();
     const installer = user?.name || user?.email || '—';
 
-    // Update the installation record
     const patch: Partial<ProductInstallation> = {
       overallProgress: 100,
       installedAt: now,
@@ -311,27 +310,20 @@ export default function Installation() {
             </div>
             <div>
               <h1 className="text-sm font-bold text-gray-800">التركيب</h1>
-              <p className="text-[9px] text-gray-400">v9.0</p>
+              <p className="text-[9px] text-gray-400">v10.0</p>
             </div>
           </div>
-          <button
-            onClick={() => { if (confirm('تسجيل خروج؟')) window.location.reload(); }}
-            className="p-2 hover:bg-red-50 rounded-lg transition-colors"
-            title="تسجيل خروج"
-          >
-            <LogOut className="w-4 h-4 text-red-500" />
-          </button>
         </div>
 
         <div className="flex flex-col items-center justify-center h-[70vh] text-gray-400">
           <div className="w-20 h-20 rounded-full bg-gray-100 flex items-center justify-center mb-4">
             <Package className="w-10 h-10 text-gray-300" />
           </div>
-          <p className="text-lg font-bold text-gray-500 mb-2">لا توجد شحنات مستلمة</p>
+          <p className="text-lg font-bold text-gray-500 mb-2">لا توجد منتجات للتركيب</p>
           <p className="text-sm text-gray-400 text-center max-w-md">
-            سيتم عرض المنتجات هنا بعد استلام الشحنات في الموقع
+            سيتم عرض المنتجات هنا بعد إضافتها في شاشة الدفعات
             <br />
-            <span className="text-xs text-gray-300 mt-1 block">الخطوة السابقة: استلام الشحنات ←</span>
+            <span className="text-xs text-gray-300 mt-1 block">الخطوة السابقة: إضافة منتجات للدفعة وتحديد الغرفة</span>
           </p>
         </div>
       </div>
@@ -359,17 +351,10 @@ export default function Installation() {
           <span className="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
             {completedProducts} مكتمل
           </span>
-          <button
-            onClick={() => { if (confirm('تسجيل خروج؟')) window.location.reload(); }}
-            className="p-2 hover:bg-red-50 rounded-lg transition-colors"
-            title="تسجيل خروج"
-          >
-            <LogOut className="w-4 h-4 text-red-500" />
-          </button>
         </div>
       </div>
 
-      <div className="p-4 space-y-4 max-w-2xl mx-auto">
+      <div className="p-4 space-y-6 max-w-2xl mx-auto">
         {/* Stats Cards */}
         <div className="grid grid-cols-4 gap-3">
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-3 text-center">
@@ -396,23 +381,23 @@ export default function Installation() {
           </div>
         </div>
 
-        {/* Install Groups by Batch/Project */}
+        {/* Install Groups by Location */}
         {installGroups.map(group => (
-          <div key={group.batchId} className="space-y-3">
-            {/* Group Header */}
+          <div key={`${group.projectId}_${group.buildingName}_${group.floorName}_${group.roomName}`} className="space-y-3">
+            {/* Location Header */}
             <div className="flex items-center gap-2 px-1">
               <Building2 className="w-4 h-4 text-blue-500" />
               <span className="text-sm font-bold text-gray-700">{group.projectName}</span>
-              <Layers className="w-3 h-3 text-gray-300" />
-              <span className="text-xs text-gray-600">{group.batchName}</span>
+              <span className="text-[10px] text-gray-400">/</span>
+              <span className="text-xs text-gray-600">{group.buildingName}</span>
+              <Layers className="w-3 h-3 text-gray-300 mx-0.5" />
+              <span className="text-xs text-gray-600">{group.floorName}</span>
+              <MapPin className="w-3 h-3 text-purple-400 mx-0.5" />
+              <span className="text-xs font-bold text-purple-600">{group.roomName}</span>
               <div className="flex-1 h-px bg-gray-100" />
-              <button
-                onClick={() => openNotes(group.batchId, group.batchName)}
-                className="flex items-center gap-1 text-[10px] bg-blue-50 text-blue-600 px-2 py-1 rounded-lg hover:bg-blue-100 transition-colors"
-              >
-                <StickyNote className="w-3 h-3" />
-                ملاحظات
-              </button>
+              <span className="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">
+                {group.products.length} منتج
+              </span>
             </div>
 
             {/* Product Cards */}
@@ -434,13 +419,13 @@ export default function Installation() {
                     className="w-full p-4 flex items-start gap-3 hover:bg-gray-50/50 transition-colors text-right"
                   >
                     {/* Product Image */}
-                    <div className={`w-14 h-14 rounded-xl flex items-center justify-center flex-shrink-0 overflow-hidden border ${
+                    <div className={`w-16 h-16 rounded-xl flex items-center justify-center flex-shrink-0 overflow-hidden border ${
                       isCompleted ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'
                     }`}>
                       {inst.productImg ? (
                         <img src={inst.productImg} alt="" className="w-full h-full object-cover" />
                       ) : (
-                        <Box className={`w-6 h-6 ${isCompleted ? 'text-green-400' : 'text-gray-300'}`} />
+                        <ImageIcon className={`w-7 h-7 ${isCompleted ? 'text-green-400' : 'text-gray-300'}`} />
                       )}
                     </div>
 
@@ -450,22 +435,24 @@ export default function Installation() {
                         <p className="text-sm font-bold text-gray-800 truncate">{inst.productName}</p>
                         {isCompleted && <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />}
                       </div>
-                      <p className="text-[10px] text-gray-500 font-mono mt-0.5">{inst.productCode}</p>
+                      <p className="text-[10px] text-gray-500 font-mono mt-0.5 flex items-center gap-1">
+                        <Hash className="w-3 h-3" />
+                        {inst.productCode}
+                      </p>
 
-                      {/* Location */}
-                      <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                        <span className="inline-flex items-center gap-0.5 text-[9px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full">
-                          <Building2 className="w-2.5 h-2.5" /> {inst.buildingName}
-                        </span>
-                        <span className="inline-flex items-center gap-0.5 text-[9px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">
-                          <Layers className="w-2.5 h-2.5" /> {inst.floorName}
-                        </span>
-                        <span className="inline-flex items-center gap-0.5 text-[9px] bg-purple-50 text-purple-600 px-1.5 py-0.5 rounded-full">
-                          <MapPin className="w-2.5 h-2.5" /> {inst.roomName}
+                      {/* Batch & Qty */}
+                      <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                        <span className="inline-flex items-center gap-0.5 text-[9px] bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded-full">
+                          <Package className="w-2.5 h-2.5" /> {inst.batchName}
                         </span>
                         <span className="text-[9px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">
-                          ×{inst.qty}
+                          الكمية: ×{inst.qty}
                         </span>
+                        {inst.boxNum && (
+                          <span className="text-[9px] bg-orange-50 text-orange-600 px-1.5 py-0.5 rounded-full">
+                            صندوق: {inst.boxNum}
+                          </span>
+                        )}
                       </div>
 
                       {/* Progress Bar */}
@@ -545,6 +532,12 @@ export default function Installation() {
                                       الكمية: <span className="font-bold">{comp.qty}</span>
                                     </span>
                                   </div>
+                                  {/* Note text if exists */}
+                                  {comp.noteText && (
+                                    <p className="text-[10px] text-blue-600 mt-1 bg-blue-50 px-2 py-1 rounded">
+                                      {comp.noteText}
+                                    </p>
+                                  )}
                                 </div>
                               </div>
 
@@ -606,7 +599,7 @@ export default function Installation() {
                           className="flex items-center gap-1 text-[10px] bg-blue-50 text-blue-600 px-3 py-2.5 rounded-xl border border-blue-100 hover:bg-blue-100 transition-colors"
                         >
                           <MessageSquare className="w-3.5 h-3.5" />
-                          ملاحظات
+                          ملاحظات الدفعة
                         </button>
                       </div>
                     </div>
