@@ -412,6 +412,7 @@ export interface Pallet {
 export interface Box {
   id: string;
   num: string;
+  name: string;
   shipId?: string;
   bldg?: string;
   flr?: string;

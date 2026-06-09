@@ -159,7 +159,7 @@ export default function Packing() {
   const handleCreateBox = () => {
     if (!boxNum.trim() || !selectedBatch) return;
     addBox({
-      id: uid(), num: boxNum.trim(), type: boxType,
+      id: uid(), num: boxNum.trim(), name: `${boxType} ${boxNum.trim()}`, type: boxType,
       wgt: boxWeight || undefined,
       boxLength: Number(boxLength) || undefined,
       boxWidth: Number(boxWidth) || undefined,
