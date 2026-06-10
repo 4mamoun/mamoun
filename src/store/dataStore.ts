@@ -133,6 +133,16 @@ function validateInput(col: string, data: any): { valid: boolean; errors: string
           data[field] = `صندوق ${data.num}`;
           continue;
         }
+        // Auto-fill missing name for old containers
+        if (col === 'containers' && field === 'name' && data.number) {
+          data[field] = `كونتينر ${data.number}`;
+          continue;
+        }
+        // Auto-fill missing name for old pallets
+        if (col === 'pallets' && field === 'name' && data.id) {
+          data[field] = `طبلية ${data.id.slice(-4)}`;
+          continue;
+        }
         errors.push(`Required field "${field}" is missing or empty`);
       }
     }
