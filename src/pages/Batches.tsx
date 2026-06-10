@@ -73,6 +73,9 @@ function BatchDetail({
   const [detailSearch, setDetailSearch] = useState('');
   const [activeTab, setActiveTab] = useState<'prods' | 'parts' | 'acc' | 'tops'>('prods');
   const [targetRoom, setTargetRoom] = useState<string>('');
+  // Room selection dialog
+  const [roomDialogOpen, setRoomDialogOpen] = useState(false);
+  const [pendingProductId, setPendingProductId] = useState<string>('');
 
   const [editName, setEditName] = useState(current.name || '');
   const [editInvoiceNo, setEditInvoiceNo] = useState(current.invoiceNo || '');
@@ -124,27 +127,60 @@ function BatchDetail({
   const addProductToBatch = (prodId: string) => {
     const prod = allProducts.find(p => p.id === prodId);
     if (!prod) return;
-    // Use targetRoom if set, otherwise add without room
-    const targetRoomData = targetRoom ? getProjectRooms.find(r => r.roomId === targetRoom) : null;
-    const roomInfo = targetRoomData ? {
-      roomId: targetRoomData.roomId,
-      roomName: targetRoomData.roomName,
-      buildingId: targetRoomData.buildingId,
-      floorId: targetRoomData.floorId
-    } : { roomId: '', roomName: '', buildingId: '', floorId: '' };
-    // Check if product with same room already exists
-    const exists = current.prods.find(p => p.id === prodId && p.roomId === roomInfo.roomId);
+    // If only one room in project, auto-assign
+    if (getProjectRooms.length === 1) {
+      const room = getProjectRooms[0];
+      const exists = current.prods.find(p => p.id === prodId && p.roomId === room.roomId);
+      if (exists) {
+        saveCurrent({ prods: current.prods.map(p => p.id === prodId && p.roomId === room.roomId ? { ...p, qty: p.qty + 1 } : p) });
+      } else {
+        saveCurrent({ prods: [...current.prods, {
+          id: prod.id, name: prod.name, code: prod.code, qty: 1,
+          roomId: room.roomId, roomName: room.roomName,
+          buildingId: room.buildingId, floorId: room.floorId
+        }] });
+      }
+      return;
+    }
+    // If multiple rooms, show dialog
+    if (getProjectRooms.length > 1) {
+      setPendingProductId(prodId);
+      setRoomDialogOpen(true);
+      return;
+    }
+    // No rooms defined — add without room
+    const exists = current.prods.find(p => p.id === prodId && p.roomId === '');
     if (exists) {
-      saveCurrent({ prods: current.prods.map(p => p.id === prodId && p.roomId === roomInfo.roomId ? { ...p, qty: p.qty + 1 } : p) });
+      saveCurrent({ prods: current.prods.map(p => p.id === prodId && p.roomId === '' ? { ...p, qty: p.qty + 1 } : p) });
     } else {
       saveCurrent({ prods: [...current.prods, {
         id: prod.id, name: prod.name, code: prod.code, qty: 1,
-        roomId: roomInfo.roomId,
-        roomName: roomInfo.roomName,
-        buildingId: roomInfo.buildingId,
-        floorId: roomInfo.floorId
+        roomId: '', roomName: '', buildingId: '', floorId: ''
       }] });
     }
+  };
+
+  const confirmAddToRoom = (roomId: string) => {
+    const prod = allProducts.find(p => p.id === pendingProductId);
+    if (!prod) return;
+    const room = getProjectRooms.find(r => r.roomId === roomId);
+    const roomInfo = room ? {
+      roomId: room.roomId, roomName: room.roomName,
+      buildingId: room.buildingId, floorId: room.floorId
+    } : { roomId: '', roomName: '', buildingId: '', floorId: '' };
+    // Check if product already in this room — increment qty
+    const exists = current.prods.find(p => p.id === pendingProductId && p.roomId === roomInfo.roomId);
+    if (exists) {
+      saveCurrent({ prods: current.prods.map(p => p.id === pendingProductId && p.roomId === roomInfo.roomId ? { ...p, qty: p.qty + 1 } : p) });
+    } else {
+      saveCurrent({ prods: [...current.prods, {
+        id: prod.id, name: prod.name, code: prod.code, qty: 1,
+        roomId: roomInfo.roomId, roomName: roomInfo.roomName,
+        buildingId: roomInfo.buildingId, floorId: roomInfo.floorId
+      }] });
+    }
+    setRoomDialogOpen(false);
+    setPendingProductId('');
   };
 
   const removeProduct = (prodId: string, roomId?: string) => {
@@ -741,6 +777,60 @@ export default function Batches() {
               <Button variant="outline" size="sm" onClick={() => setShowCreate(false)}>إلغاء</Button>
               <Button size="sm" onClick={handleCreate} disabled={!projectId || !batchName.trim()} className="bg-gradient-to-r from-cyan-500 to-cyan-600">إنشاء الدفعة والمتابعة</Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Room Selection Dialog */}
+      <Dialog open={roomDialogOpen} onOpenChange={setRoomDialogOpen}>
+        <DialogContent className="max-w-sm" dir="rtl">
+          <DialogHeader>
+            <DialogTitle className="text-sm flex items-center gap-2">
+              <MapPin className="w-4 h-4 text-indigo-500" />
+              اختر الغرفة
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 py-3">
+            {getProjectRooms.length === 0 ? (
+              <p className="text-xs text-gray-400 text-center">لا توجد غرف معرفة في المشروع</p>
+            ) : (
+              getProjectRooms.map(room => {
+                const prod = allProducts.find(p => p.id === pendingProductId);
+                const alreadyInRoom = current.prods.some(p => p.id === pendingProductId && p.roomId === room.roomId);
+                return (
+                  <button
+                    key={room.roomId}
+                    onClick={() => confirmAddToRoom(room.roomId)}
+                    className={`w-full text-right p-3 rounded-xl border transition-all flex items-center justify-between ${
+                      alreadyInRoom
+                        ? 'bg-amber-50 border-amber-200 hover:bg-amber-100'
+                        : 'bg-white border-gray-200 hover:bg-indigo-50 hover:border-indigo-200'
+                    }`}
+                  >
+                    <div>
+                      <p className="text-xs font-bold text-gray-800">{room.fullName}</p>
+                      {alreadyInRoom && prod && (
+                        <p className="text-[9px] text-amber-600 mt-0.5">
+                          {prod.name} موجود بالفعل — سيتم زيادة الكمية
+                        </p>
+                      )}
+                    </div>
+                    {alreadyInRoom ? (
+                      <span className="text-[9px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">موجود</span>
+                    ) : (
+                      <Plus className="w-4 h-4 text-indigo-400" />
+                    )}
+                  </button>
+                );
+              })
+            )}
+            {/* Option: add without room */}
+            <button
+              onClick={() => confirmAddToRoom('')}
+              className="w-full text-right p-3 rounded-xl border border-dashed border-gray-300 hover:bg-gray-50 transition-all text-xs text-gray-500"
+            >
+              — بدون غرفة —
+            </button>
           </div>
         </DialogContent>
       </Dialog>
