@@ -15,7 +15,7 @@ import type { Batch, BatchExtraItem, Product } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Search, Plus, Minus, X, Layers, Package, ChevronLeft, ImageIcon, CalendarDays, Edit3, Boxes, ListChecks, ClipboardList, Save, Globe, Factory, Send, MessageSquare } from 'lucide-react';
+import { Search, Plus, Minus, X, Layers, Package, ChevronLeft, ImageIcon, CalendarDays, Edit3, Boxes, ListChecks, ClipboardList, Save, Globe, Factory, Send, MessageSquare, CheckCircle } from 'lucide-react';
 
 function uid() { return Date.now().toString(36) + Math.random().toString(36).substr(2, 5); }
 function today() { return new Date().toISOString().split('T')[0]; }
