@@ -240,6 +240,15 @@ export default function Installation() {
       patch.installedBy = user?.name || user?.email || '—';
     }
 
+    // If all components are installed, auto-update the box
+    if (newProgress === 100 && inst.boxId) {
+      await updateBox(inst.boxId, {
+        installed: true,
+        installedAt: new Date().toISOString(),
+        installedBy: user?.name || user?.email || '—',
+      });
+    }
+
     // Check if this installation already exists in store
     const existing = installations.find(i => i.id === inst.id);
     if (existing) {

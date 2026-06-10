@@ -228,6 +228,19 @@ function BatchDetail({
         >
           <MessageSquare className="w-3 h-3" /> ملاحظات
         </button>
+        {/* Mark as Complete — change status to 'تم' */}
+        {current.status === 'جديد' && current.prods.length > 0 && (
+          <button
+            onClick={() => {
+              if (confirm('تأكيد اكتمال تجهيز الدفعة؟')) {
+                saveCurrent({ status: 'تم' });
+              }
+            }}
+            className="text-[10px] px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-bold flex items-center gap-1 transition-colors"
+          >
+            <CheckCircle className="w-3 h-3" /> تم التجهيز
+          </button>
+        )}
         {/* Send to Packing button — only when batch status is 'تم' (completed) */}
         {current.status === 'تم' && (
           <button

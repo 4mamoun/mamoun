@@ -39,7 +39,7 @@ function deriveBatchStage(
   if (!allBoxesInContainers) return 'packing';
 
   // All boxes in containers → packing done
-  if (allBoxesInContainers && batchContainers.length === 0) return 'packing_done';
+  if (allBoxesInContainers) return 'packing_done';
 
   // Check container shipment status
   if (batchContainers.length > 0) {
