@@ -128,6 +128,11 @@ function validateInput(col: string, data: any): { valid: boolean; errors: string
     for (const field of required) {
       if (field === 'id') continue; // already checked above
       if (data[field] === undefined || data[field] === null || data[field] === '') {
+        // Auto-fill missing name for old boxes
+        if (col === 'boxes' && field === 'name' && data.num) {
+          data[field] = `صندوق ${data.num}`;
+          continue;
+        }
         errors.push(`Required field "${field}" is missing or empty`);
       }
     }
