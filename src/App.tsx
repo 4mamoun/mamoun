@@ -88,16 +88,16 @@ function App() {
           <Route path="/shipments"       element={<SuspendedRoute element={<Shipments />} />} />
           <Route path="/delivery"        element={<SuspendedRoute element={<Delivery />} />} />
           <Route path="/installation"    element={<SuspendedRoute element={<Installation />} />} />
-          <Route path="/prods"           element={<SuspendedRoute element={<Products />} />} />
+          <Route path="/products"        element={<SuspendedRoute element={<Products />} />} />
           <Route path="/parts"           element={<SuspendedRoute element={<Parts />} />} />
           <Route path="/tops"            element={<SuspendedRoute element={<Tops />} />} />
-          <Route path="/acc"             element={<SuspendedRoute element={<Accessories />} />} />
+          <Route path="/accessories"     element={<SuspendedRoute element={<Accessories />} />} />
           <Route path="/warehouse"       element={<SuspendedRoute element={<Warehouse />} />} />
           <Route path="/stock"           element={<Navigate to="/warehouse" replace />} />
           <Route path="/users"           element={<SuspendedRoute element={<Users />} />} />
           <Route path="/settings"        element={<SuspendedRoute element={<Settings />} />} />
           <Route path="/profile"         element={<SuspendedRoute element={<Profile />} />} />
-          <Route path="/follow-up"       element={<SuspendedRoute element={<FollowUp />} />} />
+          <Route path="/followup"        element={<SuspendedRoute element={<FollowUp />} />} />
           <Route path="/notes-summary"   element={<SuspendedRoute element={<NotesSummary />} />} />
           <Route path="/pick-list"       element={<SuspendedRoute element={<PickList />} />} />
           <Route path="/packing-list-report" element={<SuspendedRoute element={<PackingListReport />} />} />

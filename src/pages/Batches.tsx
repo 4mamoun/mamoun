@@ -73,9 +73,6 @@ function BatchDetail({
   const [detailSearch, setDetailSearch] = useState('');
   const [activeTab, setActiveTab] = useState<'prods' | 'parts' | 'acc' | 'tops'>('prods');
 
-  // ─── State للغرفة المختارة ───
-  const [selectedRoom, setSelectedRoom] = useState<{buildingId: string, floorId: string, roomId: string, roomName: string} | null>(null);
-
   const [editName, setEditName] = useState(current.name || '');
   const [editInvoiceNo, setEditInvoiceNo] = useState(current.invoiceNo || '');
   const [editDesc, setEditDesc] = useState(current.desc || '');
@@ -122,14 +119,16 @@ function BatchDetail({
     [current.prods, allProducts, parts, accessories, tops]
   );
 
-  // Product actions
+  // Product actions — product-level room
   const addProductToBatch = (prodId: string) => {
     const prod = allProducts.find(p => p.id === prodId);
     if (!prod) return;
-    const roomInfo = selectedRoom || { roomId: undefined, roomName: undefined, buildingId: undefined, floorId: undefined };
-    const exists = current.prods.find(p => p.id === prodId && p.roomId === roomInfo.roomId);
+    // Add without room first; user selects room from the summary panel
+    const roomInfo = { roomId: '', roomName: '', buildingId: '', floorId: '' };
+    // Check if product with no room already exists
+    const exists = current.prods.find(p => p.id === prodId && p.roomId === '');
     if (exists) {
-      saveCurrent({ prods: current.prods.map(p => p.id === prodId && p.roomId === roomInfo.roomId ? { ...p, qty: p.qty + 1 } : p) });
+      saveCurrent({ prods: current.prods.map(p => p.id === prodId && p.roomId === '' ? { ...p, qty: p.qty + 1 } : p) });
     } else {
       saveCurrent({ prods: [...current.prods, {
         id: prod.id, name: prod.name, code: prod.code, qty: 1,
@@ -140,10 +139,39 @@ function BatchDetail({
       }] });
     }
   };
-  const removeProduct = (prodId: string) => saveCurrent({ prods: current.prods.filter(p => p.id !== prodId) });
-  const setProdQty = (prodId: string, qty: number) => {
-    if (qty <= 0) { removeProduct(prodId); return; }
-    saveCurrent({ prods: current.prods.map(p => p.id === prodId ? { ...p, qty } : p) });
+
+  const removeProduct = (prodId: string, roomId?: string) => {
+    saveCurrent({ prods: current.prods.filter(p => !(p.id === prodId && p.roomId === (roomId || ''))) });
+  };
+
+  const setProdQty = (prodId: string, roomId: string, qty: number) => {
+    if (qty <= 0) { removeProduct(prodId, roomId); return; }
+    saveCurrent({ prods: current.prods.map(p => p.id === prodId && p.roomId === roomId ? { ...p, qty } : p) });
+  };
+
+  const setProdRoom = (prodId: string, roomId: string, newRoomId: string) => {
+    const room = getProjectRooms.find(r => r.roomId === newRoomId);
+    if (!room) return;
+    // Check if product with same new room already exists
+    const exists = current.prods.find(p => p.id === prodId && p.roomId === newRoomId);
+    if (exists && newRoomId !== roomId) {
+      // Merge: add qty to existing and remove the old one
+      const oldProd = current.prods.find(p => p.id === prodId && p.roomId === roomId);
+      if (!oldProd) return;
+      saveCurrent({
+        prods: current.prods
+          .filter(p => !(p.id === prodId && p.roomId === roomId))
+          .map(p => p.id === prodId && p.roomId === newRoomId ? { ...p, qty: p.qty + oldProd.qty } : p)
+      });
+    } else {
+      saveCurrent({
+        prods: current.prods.map(p =>
+          p.id === prodId && p.roomId === roomId
+            ? { ...p, roomId: room.roomId, roomName: room.roomName, buildingId: room.buildingId, floorId: room.floorId }
+            : p
+        )
+      });
+    }
   };
 
   // Extra items
@@ -243,6 +271,19 @@ function BatchDetail({
                     <div className="flex-1 min-w-0">
                       <p className="text-[11px] font-medium truncate">{p.name}</p>
                       <p className="text-[9px] text-gray-400">{p.code}</p>
+                      {/* Room selector per product */}
+                      {getProjectRooms.length > 0 && (
+                        <select
+                          className="text-[9px] border rounded-md px-1 py-0.5 mt-0.5 w-full bg-white text-gray-600"
+                          value={p.roomId || ''}
+                          onChange={(e) => setProdRoom(p.id, p.roomId || '', e.target.value)}
+                        >
+                          <option value="">— اختر الغرفة —</option>
+                          {getProjectRooms.map(r => (
+                            <option key={r.roomId} value={r.roomId}>{r.fullName}</option>
+                          ))}
+                        </select>
+                      )}
                       {p.roomName && (
                         <span className="text-[9px] bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded-full inline-block mt-0.5">
                           {p.roomName}
@@ -250,11 +291,11 @@ function BatchDetail({
                       )}
                     </div>
                     <div className="flex items-center gap-1">
-                      <button onClick={() => setProdQty(p.id, p.qty - 1)} className="w-5 h-5 rounded bg-gray-100 flex items-center justify-center"><Minus className="w-2.5 h-2.5" /></button>
+                      <button onClick={() => setProdQty(p.id, p.roomId || '', p.qty - 1)} className="w-5 h-5 rounded bg-gray-100 flex items-center justify-center"><Minus className="w-2.5 h-2.5" /></button>
                       <span className="text-xs font-bold w-4 text-center">{p.qty}</span>
-                      <button onClick={() => setProdQty(p.id, p.qty + 1)} className="w-5 h-5 rounded bg-gray-100 flex items-center justify-center"><Plus className="w-2.5 h-2.5" /></button>
+                      <button onClick={() => setProdQty(p.id, p.roomId || '', p.qty + 1)} className="w-5 h-5 rounded bg-gray-100 flex items-center justify-center"><Plus className="w-2.5 h-2.5" /></button>
                     </div>
-                    <button onClick={() => removeProduct(p.id)} className="p-1 hover:bg-red-100 rounded"><X className="w-3 h-3 text-red-500" /></button>
+                    <button onClick={() => removeProduct(p.id, p.roomId || '')} className="p-1 hover:bg-red-100 rounded"><X className="w-3 h-3 text-red-500" /></button>
                   </div>
                 ))}
               </div>
@@ -354,55 +395,44 @@ function BatchDetail({
 
           <div className="flex-1 overflow-y-auto p-4">
             {activeTab === 'prods' && (
-              <>
-                {/* Dropdown تحديد الغرفة */}
-                {getProjectRooms.length > 0 && (
-                  <div className="mb-3">
-                    <label className="text-[10px] font-semibold text-gray-500 block mb-1">موقع التركيب (اختياري)</label>
-                    <select
-                      className="text-xs border rounded-lg px-2 py-1.5 w-full bg-white"
-                      value={selectedRoom?.roomId || ''}
-                      onChange={(e) => {
-                        const room = getProjectRooms.find(r => r.roomId === e.target.value);
-                        setSelectedRoom(room || null);
-                      }}
-                    >
-                      <option value="">— اختر الغرفة —</option>
-                      {getProjectRooms.map(r => (
-                        <option key={r.roomId} value={r.roomId}>{r.fullName}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-                  {filteredProds.map(prod => {
-                    const inBatch = current.prods.find(p => p.id === prod.id);
-                    return (
-                      <div key={prod.id} className={`bg-white rounded-xl border-2 transition-all overflow-hidden ${inBatch ? 'border-cyan-400 shadow-md' : 'border-gray-100 hover:border-gray-200'}`}>
-                        <div className="aspect-square bg-gray-50 relative">
-                          {prod.img ? <img src={prod.img} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center"><ImageIcon className="w-8 h-8 text-gray-200" /></div>}
-                          {inBatch && <div className="absolute top-2 right-2 bg-cyan-500 text-white text-[10px] px-1.5 py-0.5 rounded-full font-bold">{inBatch.qty}</div>}
-                        </div>
-                        <div className="p-2.5">
-                          <p className="text-[11px] font-bold text-gray-800 truncate">{prod.name}</p>
-                          <p className="text-[9px] text-gray-400 font-mono">{prod.code}</p>
-                          <div className="flex items-center gap-1 mt-2">
-                            {inBatch ? (
-                              <>
-                                <button onClick={() => setProdQty(prod.id, inBatch.qty - 1)} className="w-7 h-7 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center"><Minus className="w-3.5 h-3.5" /></button>
-                                <span className="flex-1 text-center text-sm font-bold">{inBatch.qty}</span>
-                                <button onClick={() => setProdQty(prod.id, inBatch.qty + 1)} className="w-7 h-7 rounded-lg bg-cyan-100 hover:bg-cyan-200 flex items-center justify-center"><Plus className="w-3.5 h-3.5 text-cyan-700" /></button>
-                              </>
-                            ) : (
-                              <button onClick={() => addProductToBatch(prod.id)} className="flex-1 h-8 rounded-lg bg-gray-100 hover:bg-cyan-50 text-xs font-bold text-gray-600 hover:text-cyan-700 transition-colors">إضافة</button>
-                            )}
-                          </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+                {filteredProds.map(prod => {
+                  // Count total qty of this product across all rooms
+                  const prodEntries = current.prods.filter(p => p.id === prod.id);
+                  const totalQty = prodEntries.reduce((sum, p) => sum + p.qty, 0);
+                  return (
+                    <div key={prod.id} className={`bg-white rounded-xl border-2 transition-all overflow-hidden ${totalQty > 0 ? 'border-cyan-400 shadow-md' : 'border-gray-100 hover:border-gray-200'}`}>
+                      <div className="aspect-square bg-gray-50 relative">
+                        {prod.img ? <img src={prod.img} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center"><ImageIcon className="w-8 h-8 text-gray-200" /></div>}
+                        {totalQty > 0 && <div className="absolute top-2 right-2 bg-cyan-500 text-white text-[10px] px-1.5 py-0.5 rounded-full font-bold">{totalQty}</div>}
+                      </div>
+                      <div className="p-2.5">
+                        <p className="text-[11px] font-bold text-gray-800 truncate">{prod.name}</p>
+                        <p className="text-[9px] text-gray-400 font-mono">{prod.code}</p>
+                        <div className="flex items-center gap-1 mt-2">
+                          {totalQty > 0 ? (
+                            <>
+                              <button onClick={() => {
+                                // Decrement the first entry (no room priority)
+                                const entry = current.prods.find(p => p.id === prod.id);
+                                if (entry) setProdQty(prod.id, entry.roomId || '', entry.qty - 1);
+                              }} className="w-7 h-7 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center"><Minus className="w-3.5 h-3.5" /></button>
+                              <span className="flex-1 text-center text-sm font-bold">{totalQty}</span>
+                              <button onClick={() => {
+                                // Increment the first entry (no room priority)
+                                const entry = current.prods.find(p => p.id === prod.id);
+                                if (entry) setProdQty(prod.id, entry.roomId || '', entry.qty + 1);
+                              }} className="w-7 h-7 rounded-lg bg-cyan-100 hover:bg-cyan-200 flex items-center justify-center"><Plus className="w-3.5 h-3.5 text-cyan-700" /></button>
+                            </>
+                          ) : (
+                            <button onClick={() => addProductToBatch(prod.id)} className="flex-1 h-8 rounded-lg bg-gray-100 hover:bg-cyan-50 text-xs font-bold text-gray-600 hover:text-cyan-700 transition-colors">إضافة</button>
+                          )}
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
-              </>
+                    </div>
+                  );
+                })}
+              </div>
             )}
             {activeTab === 'parts' && (
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">

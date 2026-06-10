@@ -35,14 +35,7 @@ export default function Login() {
 
   const handleGoogle = async () => {
     clearError();
-    try {
-      await loginWithGoogle();
-    } catch (e: any) {
-      // If popup blocked, show error
-      if (e.code === 'auth/popup-blocked' || e.code === 'auth/cancelled-popup-request') {
-        setLocalError('تم حظر النافذة المنبثقة. جرب تسجيل الدخول بالبريد والمرور.');
-      }
-    }
+    await loginWithGoogle();
   };
 
   return (
