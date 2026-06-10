@@ -15,7 +15,7 @@ import type { Batch, BatchExtraItem, Product } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Search, Plus, Minus, X, Layers, Package, ChevronLeft, ImageIcon, CalendarDays, Edit3, Boxes, ListChecks, ClipboardList, Save, Globe, Factory, Send, MessageSquare, CheckCircle } from 'lucide-react';
+import { Search, Plus, Minus, X, Layers, Package, ChevronLeft, ImageIcon, CalendarDays, Edit3, Boxes, ListChecks, ClipboardList, Save, Globe, Factory, Send, MessageSquare, CheckCircle, MapPin } from 'lucide-react';
 
 function uid() { return Date.now().toString(36) + Math.random().toString(36).substr(2, 5); }
 function today() { return new Date().toISOString().split('T')[0]; }
@@ -72,6 +72,7 @@ function BatchDetail({
   const [showEdit, setShowEdit] = useState(false);
   const [detailSearch, setDetailSearch] = useState('');
   const [activeTab, setActiveTab] = useState<'prods' | 'parts' | 'acc' | 'tops'>('prods');
+  const [targetRoom, setTargetRoom] = useState<string>('');
 
   const [editName, setEditName] = useState(current.name || '');
   const [editInvoiceNo, setEditInvoiceNo] = useState(current.invoiceNo || '');
@@ -123,12 +124,18 @@ function BatchDetail({
   const addProductToBatch = (prodId: string) => {
     const prod = allProducts.find(p => p.id === prodId);
     if (!prod) return;
-    // Add without room first; user selects room from the summary panel
-    const roomInfo = { roomId: '', roomName: '', buildingId: '', floorId: '' };
-    // Check if product with no room already exists
-    const exists = current.prods.find(p => p.id === prodId && p.roomId === '');
+    // Use targetRoom if set, otherwise add without room
+    const targetRoomData = targetRoom ? getProjectRooms.find(r => r.roomId === targetRoom) : null;
+    const roomInfo = targetRoomData ? {
+      roomId: targetRoomData.roomId,
+      roomName: targetRoomData.roomName,
+      buildingId: targetRoomData.buildingId,
+      floorId: targetRoomData.floorId
+    } : { roomId: '', roomName: '', buildingId: '', floorId: '' };
+    // Check if product with same room already exists
+    const exists = current.prods.find(p => p.id === prodId && p.roomId === roomInfo.roomId);
     if (exists) {
-      saveCurrent({ prods: current.prods.map(p => p.id === prodId && p.roomId === '' ? { ...p, qty: p.qty + 1 } : p) });
+      saveCurrent({ prods: current.prods.map(p => p.id === prodId && p.roomId === roomInfo.roomId ? { ...p, qty: p.qty + 1 } : p) });
     } else {
       saveCurrent({ prods: [...current.prods, {
         id: prod.id, name: prod.name, code: prod.code, qty: 1,
@@ -276,43 +283,79 @@ function BatchDetail({
             <p className="text-xs font-bold">محتويات الدفعة</p>
           </div>
           <div className="flex-1 overflow-y-auto p-3 space-y-3">
-            {current.prods.length > 0 && (
-              <div>
-                <p className="text-[10px] font-bold text-gray-500 mb-1 flex items-center gap-1"><Package className="w-3 h-3" /> المنتجات ({current.prods.length})</p>
-                {current.prods.map(p => (
-                  <div key={`${p.id}-${p.roomId || 'no-room'}`} className="bg-white rounded-lg p-2 mb-1 flex items-center gap-2">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[11px] font-medium truncate">{p.name}</p>
-                      <p className="text-[9px] text-gray-400">{p.code}</p>
-                      {/* Room selector per product */}
-                      {getProjectRooms.length > 0 && (
-                        <select
-                          className="text-[9px] border rounded-md px-1 py-0.5 mt-0.5 w-full bg-white text-gray-600"
-                          value={p.roomId || ''}
-                          onChange={(e) => setProdRoom(p.id, p.roomId || '', e.target.value)}
-                        >
-                          <option value="">— اختر الغرفة —</option>
-                          {getProjectRooms.map(r => (
-                            <option key={r.roomId} value={r.roomId}>{r.fullName}</option>
-                          ))}
-                        </select>
-                      )}
-                      {p.roomName && (
-                        <span className="text-[9px] bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded-full inline-block mt-0.5">
-                          {p.roomName}
-                        </span>
-                      )}
+            {/* Products grouped by ROOM */}
+            {(() => {
+              // Group products by room
+              const roomGroups: Record<string, {room: any, prods: typeof current.prods}> = {};
+              for (const p of current.prods) {
+                const key = p.roomId || 'no-room';
+                if (!roomGroups[key]) {
+                  roomGroups[key] = {
+                    room: p.roomId ? getProjectRooms.find(r => r.roomId === p.roomId) : null,
+                    prods: []
+                  };
+                }
+                roomGroups[key].prods.push(p);
+              }
+              return Object.entries(roomGroups).map(([roomKey, group]) => (
+                <div key={roomKey} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                  {/* Room Header */}
+                  <div className="px-3 py-2 bg-gradient-to-r from-indigo-50 to-purple-50 border-b border-indigo-100 flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <MapPin className="w-3 h-3 text-indigo-500" />
+                      <span className="text-[10px] font-bold text-indigo-700">
+                        {group.room ? group.room.fullName : '— بدون غرفة —'}
+                      </span>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <button onClick={() => setProdQty(p.id, p.roomId || '', p.qty - 1)} className="w-5 h-5 rounded bg-gray-100 flex items-center justify-center"><Minus className="w-2.5 h-2.5" /></button>
-                      <span className="text-xs font-bold w-4 text-center">{p.qty}</span>
-                      <button onClick={() => setProdQty(p.id, p.roomId || '', p.qty + 1)} className="w-5 h-5 rounded bg-gray-100 flex items-center justify-center"><Plus className="w-2.5 h-2.5" /></button>
-                    </div>
-                    <button onClick={() => removeProduct(p.id, p.roomId || '')} className="p-1 hover:bg-red-100 rounded"><X className="w-3 h-3 text-red-500" /></button>
+                    <span className="text-[9px] bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded-full">
+                      {group.prods.length} منتج
+                    </span>
                   </div>
-                ))}
-              </div>
-            )}
+                  {/* Products in this room */}
+                  <div className="p-2 space-y-1">
+                    {group.prods.map(p => (
+                      <div key={`${p.id}-${p.roomId || 'no-room'}`} className="bg-gray-50 rounded-lg p-2 flex items-center gap-2">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[11px] font-medium truncate">{p.name}</p>
+                          <p className="text-[9px] text-gray-400">{p.code}</p>
+                          {/* Change room */}
+                          {getProjectRooms.length > 0 && (
+                            <select
+                              className="text-[9px] border rounded-md px-1 py-0.5 mt-0.5 w-full bg-white text-gray-600"
+                              value={p.roomId || ''}
+                              onChange={(e) => setProdRoom(p.id, p.roomId || '', e.target.value)}
+                            >
+                              <option value="">— نقل لغرفة —</option>
+                              {getProjectRooms.map(r => (
+                                <option key={r.roomId} value={r.roomId}>{r.fullName}</option>
+                              ))}
+                            </select>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button onClick={() => setProdQty(p.id, p.roomId || '', p.qty - 1)} className="w-5 h-5 rounded bg-gray-200 flex items-center justify-center hover:bg-gray-300"><Minus className="w-2.5 h-2.5" /></button>
+                          <span className="text-xs font-bold w-4 text-center">{p.qty}</span>
+                          <button onClick={() => setProdQty(p.id, p.roomId || '', p.qty + 1)} className="w-5 h-5 rounded bg-gray-200 flex items-center justify-center hover:bg-gray-300"><Plus className="w-2.5 h-2.5" /></button>
+                        </div>
+                        <button onClick={() => removeProduct(p.id, p.roomId || '')} className="p-1 hover:bg-red-100 rounded"><X className="w-3 h-3 text-red-500" /></button>
+                      </div>
+                    ))}
+                    {/* Add product to this room */}
+                    <button
+                      onClick={() => {
+                        // Open the product grid filtered for this room
+                        setActiveTab('prods');
+                        // Set a "target room" state
+                        setTargetRoom(roomKey === 'no-room' ? '' : roomKey);
+                      }}
+                      className="w-full text-[10px] py-1.5 rounded-lg border border-dashed border-indigo-200 text-indigo-500 hover:bg-indigo-50 hover:border-indigo-300 transition-colors flex items-center justify-center gap-1"
+                    >
+                      <Plus className="w-3 h-3" /> إضافة منتج للغرفة
+                    </button>
+                  </div>
+                </div>
+              ));
+            })()}
             {localItems.length > 0 && (
               <div className="bg-green-50 rounded-xl border border-green-200 p-3">
                 <p className="text-[10px] font-bold text-green-700 mb-2 flex items-center gap-1"><Factory className="w-3.5 h-3.5" /> القطع المحلية ({localItems.length} صنف)</p>
