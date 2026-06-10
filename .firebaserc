@@ -1,8 +1,5 @@
 {
   "projects": {
-    "default": "mamoun-05-2026",
-    "defult": "maani2026"
-  },
-  "targets": {},
-  "etags": {}
+    "default": "mamoun-05-2026"
+  }
 }
