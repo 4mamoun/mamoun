@@ -627,6 +627,59 @@ function BatchDetail({
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Room Selection Dialog */}
+      <Dialog open={roomDialogOpen} onOpenChange={setRoomDialogOpen}>
+        <DialogContent className="max-w-sm" dir="rtl">
+          <DialogHeader>
+            <DialogTitle className="text-sm flex items-center gap-2">
+              <MapPin className="w-4 h-4 text-indigo-500" />
+              اختر الغرفة
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 py-3">
+            {getProjectRooms.length === 0 ? (
+              <p className="text-xs text-gray-400 text-center">لا توجد غرف معرفة في المشروع</p>
+            ) : (
+              getProjectRooms.map(room => {
+                const prod = allProducts.find(p => p.id === pendingProductId);
+                const alreadyInRoom = current.prods.some(p => p.id === pendingProductId && p.roomId === room.roomId);
+                return (
+                  <button
+                    key={room.roomId}
+                    onClick={() => confirmAddToRoom(room.roomId)}
+                    className={`w-full text-right p-3 rounded-xl border transition-all flex items-center justify-between ${
+                      alreadyInRoom
+                        ? 'bg-amber-50 border-amber-200 hover:bg-amber-100'
+                        : 'bg-white border-gray-200 hover:bg-indigo-50 hover:border-indigo-200'
+                    }`}
+                  >
+                    <div>
+                      <p className="text-xs font-bold text-gray-800">{room.fullName}</p>
+                      {alreadyInRoom && prod && (
+                        <p className="text-[9px] text-amber-600 mt-0.5">
+                          {prod.name} موجود بالفعل — سيتم زيادة الكمية
+                        </p>
+                      )}
+                    </div>
+                    {alreadyInRoom ? (
+                      <span className="text-[9px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">موجود</span>
+                    ) : (
+                      <Plus className="w-4 h-4 text-indigo-400" />
+                    )}
+                  </button>
+                );
+              })
+            )}
+            <button
+              onClick={() => confirmAddToRoom('')}
+              className="w-full text-right p-3 rounded-xl border border-dashed border-gray-300 hover:bg-gray-50 transition-all text-xs text-gray-500"
+            >
+              — بدون غرفة —
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -777,60 +830,6 @@ export default function Batches() {
               <Button variant="outline" size="sm" onClick={() => setShowCreate(false)}>إلغاء</Button>
               <Button size="sm" onClick={handleCreate} disabled={!projectId || !batchName.trim()} className="bg-gradient-to-r from-cyan-500 to-cyan-600">إنشاء الدفعة والمتابعة</Button>
             </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Room Selection Dialog */}
-      <Dialog open={roomDialogOpen} onOpenChange={setRoomDialogOpen}>
-        <DialogContent className="max-w-sm" dir="rtl">
-          <DialogHeader>
-            <DialogTitle className="text-sm flex items-center gap-2">
-              <MapPin className="w-4 h-4 text-indigo-500" />
-              اختر الغرفة
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-2 py-3">
-            {getProjectRooms.length === 0 ? (
-              <p className="text-xs text-gray-400 text-center">لا توجد غرف معرفة في المشروع</p>
-            ) : (
-              getProjectRooms.map(room => {
-                const prod = allProducts.find(p => p.id === pendingProductId);
-                const alreadyInRoom = current.prods.some(p => p.id === pendingProductId && p.roomId === room.roomId);
-                return (
-                  <button
-                    key={room.roomId}
-                    onClick={() => confirmAddToRoom(room.roomId)}
-                    className={`w-full text-right p-3 rounded-xl border transition-all flex items-center justify-between ${
-                      alreadyInRoom
-                        ? 'bg-amber-50 border-amber-200 hover:bg-amber-100'
-                        : 'bg-white border-gray-200 hover:bg-indigo-50 hover:border-indigo-200'
-                    }`}
-                  >
-                    <div>
-                      <p className="text-xs font-bold text-gray-800">{room.fullName}</p>
-                      {alreadyInRoom && prod && (
-                        <p className="text-[9px] text-amber-600 mt-0.5">
-                          {prod.name} موجود بالفعل — سيتم زيادة الكمية
-                        </p>
-                      )}
-                    </div>
-                    {alreadyInRoom ? (
-                      <span className="text-[9px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">موجود</span>
-                    ) : (
-                      <Plus className="w-4 h-4 text-indigo-400" />
-                    )}
-                  </button>
-                );
-              })
-            )}
-            {/* Option: add without room */}
-            <button
-              onClick={() => confirmAddToRoom('')}
-              className="w-full text-right p-3 rounded-xl border border-dashed border-gray-300 hover:bg-gray-50 transition-all text-xs text-gray-500"
-            >
-              — بدون غرفة —
-            </button>
           </div>
         </DialogContent>
       </Dialog>
