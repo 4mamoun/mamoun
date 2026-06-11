@@ -198,13 +198,15 @@ function BatchDetail({
     // Check if product with same new room already exists
     const exists = current.prods.find(p => p.id === prodId && p.roomId === newRoomId);
     if (exists && newRoomId !== roomId) {
-      // Merge: add qty to existing and remove the old one
-      const oldProd = current.prods.find(p => p.id === prodId && p.roomId === roomId);
-      if (!oldProd) return;
+      // Copy: add qty to existing room AND keep the source room
+      const sourceProd = current.prods.find(p => p.id === prodId && p.roomId === roomId);
+      if (!sourceProd) return;
       saveCurrent({
-        prods: current.prods
-          .filter(p => !(p.id === prodId && p.roomId === roomId))
-          .map(p => p.id === prodId && p.roomId === newRoomId ? { ...p, qty: p.qty + oldProd.qty } : p)
+        prods: current.prods.map(p =>
+          p.id === prodId && p.roomId === newRoomId
+            ? { ...p, qty: p.qty + sourceProd.qty }
+            : p
+        )
       });
     } else {
       saveCurrent({
@@ -361,7 +363,7 @@ function BatchDetail({
                               value={p.roomId || ''}
                               onChange={(e) => setProdRoom(p.id, p.roomId || '', e.target.value)}
                             >
-                              <option value="">— نقل لغرفة —</option>
+                              <option value="">— نسخ لغرفة —</option>
                               {getProjectRooms.map(r => (
                                 <option key={r.roomId} value={r.roomId}>{r.fullName}</option>
                               ))}
